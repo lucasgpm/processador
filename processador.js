@@ -1,10 +1,15 @@
-import { pipeline } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.1';
+import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.1';
+
+// CONFIGURAÇÃO CRUCIAL: Desativa a busca local e aponta para o CDN remoto
+env.allowLocalModels = false;
+env.remoteHost = 'https://huggingface.co/';
+env.remotePathComponent = 'models/';
 
 let classificadorInstancia = null;
 
 async function obterClassificador() {
     if (!classificadorInstancia) {
-        // No navegador, o Xenova baixa o modelo via CDN automaticamente
+        // Agora ele vai direto na fonte sem dar erro 404 no seu console
         classificadorInstancia = await pipeline(
             'text-classification', 
             'Xenova/distilbert-base-multilingual-cased-sentiments-student'
