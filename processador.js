@@ -18,7 +18,7 @@ async function obterClassificador() {
     return classificadorInstancia;
 }
 
-self.processarCapturaInteligente = async function(entradaSuja) {
+export async function processarCapturaInteligente(entradaSuja) {
     const classifier = await obterClassificador();
     const linhas = entradaSuja.split('\n');
     const resultadoLimpo = [];
