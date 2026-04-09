@@ -87,29 +87,6 @@ const carregarIA = async () => {
     }
 };
 
-// 6. Processamento das linhas
-async function processarLinhasComClassificador(linhas, session) {
-    const limpas = linhas.map(l => l.trim()).filter(l => l.length > 5);
-    const resultados = [];
-
-    for (const linha of limpas) {
-        try {
-            // Gera os tensores reais a partir do texto
-            const { input_ids, attention_mask } = await tokenizer(linha, {
-                padding: true,
-                truncation: true,
-                maxLength: 128
-            });
-
-            const output = await session.run({ input_ids, attention_mask });
-            resultados.push({ texto: linha, raw: output });
-        } catch (e) {
-            console.warn("Ignorando linha por erro de processamento:", linha);
-        }
-    }
-    return resultados;
-}
-
 // 7. Listener de Mensagens
 self.onmessage = async (e) => {
     const { tipo, texto } = e.data;
