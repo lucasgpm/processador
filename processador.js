@@ -1,5 +1,5 @@
 // Apenas a lógica de limpeza pura (sem transformers aqui)
-export function limparChave(chaveBruta) {
+function limparChave(chaveBruta) {
     return chaveBruta
         .replace(/\(.*?\)/g, '')           
         .replace(/->|=>|^\d+[\s.]*/g, '')  
@@ -9,7 +9,7 @@ export function limparChave(chaveBruta) {
 }
 
 // Essa função agora será usada PELO WORKER
-export async function processarLinhasComClassificador(linhas, session) {
+async function processarLinhasComClassificador(linhas, session) {
     // Nota: Para classificação real, precisaríamos tokenizar. 
     // Como teste de fogo para ver se o modelo CARREGA, tente rodar um input vazio:
     
