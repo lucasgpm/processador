@@ -8,15 +8,14 @@ function limparChave(chaveBruta) {
         .trim();
 }
 
-// Essa função agora será usada PELO WORKER
 async function processarLinhasComClassificador(linhas, session) {
-    // Nota: Para classificação real, precisaríamos tokenizar. 
-    // Como teste de fogo para ver se o modelo CARREGA, tente rodar um input vazio:
-    
     const resultados = [];
+    console.log("🧐 Iniciando loop de processamento para", linhas.length, "linhas.");
+
     for (const linha of linhas) {
-        // Exemplo simplificado de input para o DistilBERT (ids fictícios para teste)
-        const inputIds = new BigInt64Array(128).fill(0n); // Exemplo de tamanho fixo
+        if (!linha.trim()) continue;
+
+        const inputIds = new BigInt64Array(128).fill(0n);
         const attentionMask = new BigInt64Array(128).fill(1n);
         
         const feeds = {
@@ -24,8 +23,21 @@ async function processarLinhasComClassificador(linhas, session) {
             attention_mask: new ort.Tensor('int64', attentionMask, [1, 128])
         };
 
-        const output = await session.run(feeds);
-        resultados.push({ texto: linha, raw: output });
+        try {
+            const output = await session.run(feeds);
+            console.log("🔍 Output bruto da IA para a linha:", linha, output);
+
+            // O ONNX puro retorna um objeto com chaves (ex: output.logits ou output.last_hidden_state)
+            // Precisamos garantir que estamos enviando algo que o modal.js entenda
+            resultados.push({ 
+                texto: linha, 
+                raw: output,
+                verificacao: "OK" 
+            });
+        } catch (e) {
+            console.error("❌ Falha na inferência da linha:", linha, e);
+        }
     }
+    console.log("📤 Enviando resultados finais para o script principal:", resultados);
     return resultados;
 }
