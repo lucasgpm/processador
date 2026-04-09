@@ -10,24 +10,33 @@ function limparChave(chaveBruta) {
 
 async function processarLinhasComClassificador(linhas, session) {
     const limpas = linhas.map(l => l.trim()).filter(l => l.length > 5);
-    
-    // Processamos em sequência ou pequenos grupos para não travar a GPU
     const resultados = [];
+
+    console.time("⏱️ Processamento Total");
+
+    // IMPORTANTE: Use um loop for normal. 
+    // O Promise.all em 32 linhas de uma vez causa o "Loading Infinito" na GPU.
     for (const linha of limpas) {
-        // O MÁGICA: Converte texto real em números que a IA entende
-        const { input_ids, attention_mask } = await tokenizer(linha, {
-            padding: true,
-            truncation: true,
-            maxLength: 128
-        });
+        try {
+            // Transforma o texto em números (input_ids e attention_mask)
+            const inputs = await tokenizer(linha, {
+                padding: true,
+                truncation: true,
+                max_length: 128
+            });
 
-        const feeds = {
-            input_ids: input_ids,
-            attention_mask: attention_mask
-        };
+            // Roda a IA com os dados reais
+            const output = await session.run({
+                input_ids: inputs.input_ids,
+                attention_mask: inputs.attention_mask
+            });
 
-        const output = await session.run(feeds);
-        resultados.push({ texto: linha, raw: output });
+            resultados.push({ texto: linha, raw: output });
+        } catch (e) {
+            console.warn(`Erro na linha: ${linha}`, e);
+        }
     }
+
+    console.timeEnd("⏱️ Processamento Total");
     return resultados;
 }
