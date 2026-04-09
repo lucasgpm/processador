@@ -1,7 +1,6 @@
 const BASE_URL = 'https://lucasgpm.github.io/processador/';
 
 let session;
-let processarLinhasComClassificador = null;
 
 /**
  * Reconstrói o modelo a partir dos chunks binários
