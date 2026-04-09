@@ -1,3 +1,7 @@
+import { AutoTokenizer } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers';
+
+let tokenizer;
+
 ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/';
 
 const BASE_URL = 'https://lucasgpm.github.io/processador/';
@@ -61,6 +65,7 @@ const carregarIA = async () => {
             });
             console.log("🐢 Rodando via CPU (WASM).");
         }
+        tokenizer = await AutoTokenizer.from_pretrained(BASE_URL);
     }
 };
 
