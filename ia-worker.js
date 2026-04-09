@@ -1,9 +1,9 @@
-import { pipeline, env, AutoTokenizer } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.1';
+importScripts('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.1');
+const { pipeline, env, AutoTokenizer } = transformers;
 
-// Configurações Globais
 env.allowLocalModels = true;
-env.allowRemoteModels = false; // Não deixa ele "fugir" para o Hugging Face
-env.localModelPath = './';    // Procura tudo a partir da pasta atual
+env.allowRemoteModels = false;
+env.localModelPath = './';
 
 let classificador;
 let processarLinhasComClassificador;
