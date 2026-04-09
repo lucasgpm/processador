@@ -1,22 +1,29 @@
+// 1. Carrega as bibliotecas necessárias
 importScripts('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2');
+// Nota: O ort (onnxruntime) já é injetado pelo seu script de montagem do Worker
 
-// Agora o 'transformers' fica disponível no escopo global do Worker
-// Vamos extrair o AutoTokenizer dele
-const { AutoTokenizer } = self.Transformers;
-
+// 2. Variáveis globais e Configurações
 let tokenizer;
-
-ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/';
-
+let session;
+let carregando = false;
 const BASE_URL = 'https://lucasgpm.github.io/processador/';
 
-let session;
+// 3. Função para configurar o Tokenizer usando a biblioteca injetada
+async function configurarTokenizer() {
+    const lib = self.Transformers || self.transformers;
+    if (!lib) throw new Error("Biblioteca Transformers não carregada.");
 
-/**
- * Reconstrói o modelo a partir dos chunks binários
- */
+    if (!tokenizer) {
+        console.log("📝 Carregando Tokenizer de:", BASE_URL);
+        // Desativamos a busca em cache local para evitar erros no GitHub Pages
+        lib.env.allowLocalModels = false; 
+        tokenizer = await lib.AutoTokenizer.from_pretrained(BASE_URL);
+    }
+}
+
+// 4. Reconstrói o modelo a partir dos chunks
 async function reconstruirModelo() {
-    console.log("🧠 Reconstruindo modelo para o ONNX Runtime...");
+    console.log("🧠 Reconstruindo modelo binário...");
     const path = `${BASE_URL}onnx/chunks/`; 
     const partes = ['model_part_0.bin', 'model_part_1.bin', 'model_part_2.bin'];
     
@@ -34,21 +41,16 @@ async function reconstruirModelo() {
             combined.set(new Uint8Array(b), offset);
             offset += b.byteLength;
         }
-        return combined.buffer; // Retorna o ArrayBuffer puro
+        return combined.buffer;
     } catch (error) {
-        throw new Error("Erro na reconstrução do modelo: " + error.message);
+        throw new Error("Erro na reconstrução: " + error.message);
     }
 }
 
-/**
- * Inicializa a IA e importa o processador lógico
- */
-let carregando = false; 
-
+// 5. Inicialização da IA (Sessão + Tokenizer)
 const carregarIA = async () => {
-    if (session) return;
+    if (session && tokenizer) return;
     if (carregando) {
-        // Se já estiver carregando, espera um pouco para não duplicar
         while (carregando) { await new Promise(r => setTimeout(r, 500)); }
         return;
     }
@@ -56,42 +58,60 @@ const carregarIA = async () => {
     carregando = true;
     try {
         self.ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/';
+        
+        // Carrega Modelo
         const modelBuffer = await reconstruirModelo();
+        console.log("🚀 Iniciando sessão ONNX (WebGPU/WASM)...");
         
-        console.log("🚀 Iniciando sessão ONNX...");
+        session = await self.ort.InferenceSession.create(modelBuffer, {
+            executionProviders: ['webgpu', 'wasm'],
+            graphOptimizationLevel: 'all'
+        });
+
+        // Carrega Tokenizer
+        await configurarTokenizer();
         
-        // Tentativa de WebGPU (Rápido) ou WASM (Fallback)
-        const options = { executionProviders: ['webgpu', 'wasm'], graphOptimizationLevel: 'all' };
-        session = await self.ort.InferenceSession.create(modelBuffer, options);
-        
-        // CARREGA O TOKENIZADOR DO GITHUB (Busca tokenizer.json e tokenizer_config.json)
-        tokenizer = await AutoTokenizer.from_pretrained(BASE_URL);
-        
-        console.log("✅ IA e Tokenizador prontos!");
+        console.log("✅ Motor e Tokenizer prontos para uso!");
     } catch (e) {
-        console.error("Falha ao carregar motor:", e);
+        console.error("❌ Falha crítica no carregamento:", e);
+        self.postMessage({ tipo: 'ERRO', mensagem: e.message });
     } finally {
         carregando = false;
     }
 };
 
-/**
- * Listener de mensagens
- */
+// 6. Processamento das linhas
+async function processarLinhasComClassificador(linhas, session) {
+    const limpas = linhas.map(l => l.trim()).filter(l => l.length > 5);
+    const resultados = [];
+
+    for (const linha of limpas) {
+        try {
+            // Gera os tensores reais a partir do texto
+            const { input_ids, attention_mask } = await tokenizer(linha, {
+                padding: true,
+                truncation: true,
+                maxLength: 128
+            });
+
+            const output = await session.run({ input_ids, attention_mask });
+            resultados.push({ texto: linha, raw: output });
+        } catch (e) {
+            console.warn("Ignorando linha por erro de processamento:", linha);
+        }
+    }
+    return resultados;
+}
+
+// 7. Listener de Mensagens
 self.onmessage = async (e) => {
     const { tipo, texto } = e.data;
-    try {
-        if (tipo === 'PRELOAD' || tipo === 'PROCESSAR') {
-            await carregarIA();
-            if (tipo === 'PRELOAD') self.postMessage({ tipo: 'PRONTO' });
-            if (tipo === 'PROCESSAR' && texto) {
-                // Chama a função que agora está no escopo global do Worker
-                const dados = await processarLinhasComClassificador(texto.split('\n'), session);
-                self.postMessage({ tipo: 'RESULTADO', dados });
-            }
+    if (tipo === 'PRELOAD' || tipo === 'PROCESSAR') {
+        await carregarIA();
+        if (tipo === 'PRELOAD') self.postMessage({ tipo: 'PRONTO' });
+        if (tipo === 'PROCESSAR' && texto) {
+            const dados = await processarLinhasComClassificador(texto.split('\n'), session);
+            self.postMessage({ tipo: 'RESULTADO', dados });
         }
-    } catch (err) {
-        console.error("❌ Erro no motor ONNX:", err);
-        self.postMessage({ tipo: 'ERRO', mensagem: err.message });
     }
 };
