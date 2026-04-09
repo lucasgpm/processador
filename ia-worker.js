@@ -30,31 +30,30 @@ async function configurarTokenizer() {
         };
     }
 
-    if (!lib.AutoTokenizer) {
-        throw new Error("Biblioteca Transformers não encontrada no escopo.");
-    }
-
     if (!tokenizer) {
-        console.log("📝 Carregando Tokenizer do GitHub...");
+        console.log("📝 Carregando Tokenizer diretamente do GitHub...");
         
-        // --- AJUSTE DE PERMISSÃO AQUI ---
+        // Resetamos as configurações globais para não confundir a lib
         if (lib.env) {
-            lib.env.allowLocalModels = true;
-            // Permitimos "remoto" porque o GitHub para o localhost é considerado remoto
-            lib.env.allowRemoteModels = true; 
-            lib.env.localModelPath = BASE_URL;
+            lib.env.allowLocalModels = false; // Desativa busca local relativa
+            lib.env.allowRemoteModels = true;  // Permite buscar na URL que vamos passar
         }
 
         try {
-            // Tentamos carregar explicitamente da URL do GitHub
+            // PASSAMOS A URL DIRETA E DEFINIMOS O NOME DO ARQUIVO
+            // Isso evita que a lib tente montar o caminho usando o padrão do Hugging Face
             tokenizer = await lib.AutoTokenizer.from_pretrained(BASE_URL, {
-                // Forçamos a lib a não procurar no cache do navegador se der erro
-                use_cache: false 
+                config: null,
+                // Forçamos a lib a entender que a BASE_URL já é o caminho completo
+                remote: true 
             });
             console.log("✅ Tokenizer carregado!");
         } catch (err) {
-            console.error("Erro específico no from_pretrained:", err);
-            throw err;
+            console.error("Erro ao carregar do GitHub, tentando fallback...");
+            
+            // Fallback: Se a montagem automática falhar, tentamos carregar sem parâmetros
+            tokenizer = await lib.AutoTokenizer.from_pretrained(BASE_URL);
+            console.log("✅ Tokenizer carregado via Fallback!");
         }
     }
 }
