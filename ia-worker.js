@@ -54,14 +54,13 @@ async function reconstruirModelo() {
 const carregarIA = async () => {
     if (session && vocab) return;
     if (carregando) return;
-
     carregando = true;
+
     try {
-        // Configurações de segurança para o ONNX no Worker
+        // Redundância de performance dentro do Worker
         if (self.ort) {
-            self.ort.env.wasm.numThreads = 1;
-            self.ort.env.wasm.simd = false;
-            self.ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.1/dist/';
+            self.ort.env.wasm.numThreads = navigator.hardwareConcurrency || 4;
+            self.ort.env.wasm.simd = true;
         }
 
         const [modelBuffer] = await Promise.all([
@@ -69,15 +68,16 @@ const carregarIA = async () => {
             carregarTokenizerManual()
         ]);
 
-        console.log("🚀 Iniciando sessão ONNX...");
+        console.log("🚀 Iniciando Motor ONNX Turbo...");
         session = await self.ort.InferenceSession.create(modelBuffer, {
             executionProviders: ['wasm'],
-            graphOptimizationLevel: 'all'
+            graphOptimizationLevel: 'all', // Otimiza o grafo do modelo para ser mais rápido
+            enableCpuMemAccessOptimizations: true
         });
 
-        console.log("✅ Sistema pronto (ONNX + Vocab Manual)!");
+        console.log("✅ Sistema em Potência Máxima!");
     } catch (e) {
-        console.error("❌ Falha crítica:", e);
+        console.error("❌ Erro no Turbo:", e);
         self.postMessage({ tipo: 'ERRO', mensagem: e.message });
     } finally {
         carregando = false;
