@@ -38,21 +38,25 @@ const carregarIA = async () => {
     if (!classificador) {
         const modelBuffer = await reconstruirCerebroIA();
 
-        console.log("🔄 Inicializando Tokenizer...");
+        console.log("🔄 Inicializando Tokenizer e Configurações...");
+        
+        // 1. Carregamos o Tokenizer normalmente
         const tokenizer = await AutoTokenizer.from_pretrained('meu-modelo', {
             remote_only: true
         });
 
-        console.log("🔄 Montando Pipeline (Usando buffer local)...");
+        // 2. BUSCA O ARQUIVO DE CONFIGURAÇÃO MANUALMENTE (Isso resolve o erro de 'null')
+        const configRes = await fetch(`${BASE_URL}meu-modelo/config.json`);
+        if (!configRes.ok) throw new Error("Não foi possível carregar o config.json");
+        const configData = await configRes.json();
 
-        // Aqui está o truque:
-        // Passamos o buffer DIRETO no lugar do nome do modelo
+        console.log("🔄 Montando Pipeline com Buffer e Config...");
+
+        // 3. Montamos o pipeline passando o buffer E a config carregada
         classificador = await pipeline('text-classification', modelBuffer, {
             tokenizer: tokenizer,
-            quantized: true,
-            // Informamos o nome apenas para a lib saber o formato, 
-            // mas ela usará o buffer que passamos antes
-            config: 'meu-modelo/config.json' 
+            config: configData, // Passamos o objeto JSON aqui, não a string do caminho
+            quantized: true
         });
 
         console.log("🚀 IA Carregada com sucesso!");
