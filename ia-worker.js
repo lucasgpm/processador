@@ -1,37 +1,56 @@
-importScripts('https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.1/dist/ort.min.js');
-importScripts('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js');
+/* IA-WORKER.JS - Versão Final Estabilizada
+   Suporta injeção via Blob e resolve conflitos de escopo.
+*/
+
+// As linhas abaixo são ignoradas quando injetamos via Firebase, 
+// mas mantidas para compatibilidade com o GitHub.
+if (typeof importScripts === 'function') {
+    try {
+        importScripts('https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.1/dist/ort.min.js');
+        importScripts('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js');
+    } catch (e) {
+        console.warn("Aviso: importScripts ignorado (carregamento via injeção local)");
+    }
+}
 
 let tokenizer;
 let session;
 let carregando = false;
 const BASE_URL = 'https://lucasgpm.github.io/processador/';
 
+// 1. Configuração do Tokenizer com "Pesca" de objetos globais
 async function configurarTokenizer() {
-    // Agora que injetamos via Firebase, o objeto 'transformers' deve existir
-    const lib = self.transformers || self.Xenova;
+    // Tenta encontrar o objeto consolidado ou monta um a partir dos fragmentos no self
+    let lib = self.transformers || self.Xenova;
 
     if (!lib) {
-        console.log("Objetos disponíveis no self:", Object.keys(self));
-        throw new Error("Biblioteca Transformers não encontrada no escopo global.");
+        console.log("🔍 Remontando objeto Transformers a partir do escopo global...");
+        lib = {
+            AutoTokenizer: self.AutoTokenizer || self.__webpack_exports__AutoTokenizer,
+            env: self.env || self.__webpack_exports__env
+        };
+    }
+
+    if (!lib.AutoTokenizer) {
+        throw new Error("Biblioteca Transformers (AutoTokenizer) não encontrada no escopo.");
     }
 
     if (!tokenizer) {
-        console.log("📝 Carregando Tokenizer do GitHub...");
+        console.log("📝 Carregando Tokenizer da Base URL...");
         
-        // Bloqueia tentativas de ir no Hugging Face
-        lib.env.allowLocalModels = true;
-        lib.env.allowRemoteModels = false;
-        lib.env.localModelPath = BASE_URL;
+        // Bloqueia chamadas ao Hugging Face e aponta para o seu GitHub
+        if (lib.env) {
+            lib.env.allowLocalModels = true;
+            lib.env.allowRemoteModels = false;
+            lib.env.localModelPath = BASE_URL;
+        }
 
-        // Tenta carregar os 4 arquivos (json e txt) da sua BASE_URL
         tokenizer = await lib.AutoTokenizer.from_pretrained(BASE_URL);
         console.log("✅ Tokenizer carregado!");
     }
 }
 
-// ... restante do código (reconstruirModelo, carregarIA, etc) ...
-
-// 4. Reconstrói o modelo a partir dos chunks
+// 2. Reconstrução dos chunks binários
 async function reconstruirModelo() {
     console.log("🧠 Reconstruindo modelo binário...");
     const path = `${BASE_URL}onnx/chunks/`; 
@@ -57,9 +76,10 @@ async function reconstruirModelo() {
     }
 }
 
-// 5. Inicialização da IA (Sessão + Tokenizer)
+// 3. Inicialização da Sessão ONNX (Modo Conservador)
 const carregarIA = async () => {
     if (session && tokenizer) return;
+    
     if (carregando) {
         while (carregando) { await new Promise(r => setTimeout(r, 500)); }
         return;
@@ -67,17 +87,20 @@ const carregarIA = async () => {
 
     carregando = true;
     try {
-        // --- CONFIGURAÇÃO DE SEGURANÇA ---
-        self.ort.env.wasm.numThreads = 1; // Força 1 thread apenas
-        self.ort.env.wasm.simd = false;   // DESATIVA SIMD (Isso resolve o memory out of bounds)
-        self.ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.1/dist/';
+        // --- TRAVAS DE MEMÓRIA (Evita memory access out of bounds) ---
+        if (self.ort) {
+            self.ort.env.wasm.numThreads = 1;
+            self.ort.env.wasm.simd = false; 
+            self.ort.env.wasm.proxy = false;
+            self.ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.1/dist/';
+        }
         
         const modelBuffer = await reconstruirModelo();
-        console.log("🚀 Iniciando sessão ONNX (Modo Seguro)...");
+        console.log("🚀 Iniciando sessão ONNX (WASM)...");
         
-        // Vamos remover o 'webgpu' por enquanto para garantir estabilidade
+        // Usamos apenas WASM para garantir que rode em qualquer navegador sem Cross-Origin-Isolation
         session = await self.ort.InferenceSession.create(modelBuffer, {
-            executionProviders: ['wasm'], // Apenas WASM puro para evitar erro de memória
+            executionProviders: ['wasm'],
             graphOptimizationLevel: 'all'
         });
 
@@ -85,22 +108,32 @@ const carregarIA = async () => {
         
         console.log("✅ Motor e Tokenizer prontos!");
     } catch (e) {
-        console.error("❌ Falha no carregamento:", e);
+        console.error("❌ Falha crítica no carregamento:", e);
         self.postMessage({ tipo: 'ERRO', mensagem: e.message });
     } finally {
         carregando = false;
     }
 };
 
-// 7. Listener de Mensagens
+// 4. Listener de Mensagens Principal
 self.onmessage = async (e) => {
     const { tipo, texto } = e.data;
+    
     if (tipo === 'PRELOAD' || tipo === 'PROCESSAR') {
         await carregarIA();
-        if (tipo === 'PRELOAD') self.postMessage({ tipo: 'PRONTO' });
+        
+        if (tipo === 'PRELOAD') {
+            self.postMessage({ tipo: 'PRONTO' });
+        }
+        
         if (tipo === 'PROCESSAR' && texto) {
-            const dados = await processarLinhasComClassificador(texto.split('\n'), session);
-            self.postMessage({ tipo: 'RESULTADO', dados });
+            // Assume que 'processarLinhasComClassificador' foi injetado via processador.js
+            if (typeof processarLinhasComClassificador === 'function') {
+                const dados = await processarLinhasComClassificador(texto.split('\n'), session);
+                self.postMessage({ tipo: 'RESULTADO', dados });
+            } else {
+                self.postMessage({ tipo: 'ERRO', mensagem: "Função de processamento não encontrada." });
+            }
         }
     }
 };
