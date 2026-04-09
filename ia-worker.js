@@ -1,64 +1,30 @@
-/* IA-WORKER.JS - Versão Final Estabilizada
-   Suporta injeção via Blob e resolve conflitos de escopo.
+/* IA-WORKER.JS - VERSÃO PURA (SEM TRANSFORMERS)
+   Usa apenas ONNX Runtime e Tokenizer Manual
 */
 
-// As linhas abaixo são ignoradas quando injetamos via Firebase, 
-// mas mantidas para compatibilidade com o GitHub.
-if (typeof importScripts === 'function') {
-    try {
-        importScripts('https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.1/dist/ort.min.js');
-        importScripts('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js');
-    } catch (e) {
-        console.warn("Aviso: importScripts ignorado (carregamento via injeção local)");
-    }
-}
-
-let tokenizer;
 let session;
+let vocab;
 let carregando = false;
 const BASE_URL = 'https://lucasgpm.github.io/processador/';
 
-// 1. Configuração do Tokenizer com "Pesca" de objetos globais
-async function configurarTokenizer() {
-    let lib = self.transformers || self.Xenova;
+// 1. Carrega o vocabulário e os tokens especiais do seu GitHub
+async function carregarTokenizerManual() {
+    if (vocab) return;
+    console.log("📝 Carregando Vocabulário Manual (JSON)...");
+    
+    const [resVocab, resTokens] = await Promise.all([
+        fetch(`${BASE_URL}tokenizer.json`),
+        fetch(`${BASE_URL}tokenizer_config.json`)
+    ]);
 
-    if (!lib) {
-        console.log("🔍 Remontando objeto Transformers...");
-        lib = {
-            AutoTokenizer: self.AutoTokenizer || self.__webpack_exports__AutoTokenizer,
-            env: self.env || self.__webpack_exports__env
-        };
-    }
-
-    if (!tokenizer) {
-        console.log("📝 Carregando Tokenizer diretamente do GitHub...");
-        
-        // Resetamos as configurações globais para não confundir a lib
-        if (lib.env) {
-            lib.env.allowLocalModels = false; // Desativa busca local relativa
-            lib.env.allowRemoteModels = true;  // Permite buscar na URL que vamos passar
-        }
-
-        try {
-            // PASSAMOS A URL DIRETA E DEFINIMOS O NOME DO ARQUIVO
-            // Isso evita que a lib tente montar o caminho usando o padrão do Hugging Face
-            tokenizer = await lib.AutoTokenizer.from_pretrained(BASE_URL, {
-                config: null,
-                // Forçamos a lib a entender que a BASE_URL já é o caminho completo
-                remote: true 
-            });
-            console.log("✅ Tokenizer carregado!");
-        } catch (err) {
-            console.error("Erro ao carregar do GitHub, tentando fallback...");
-            
-            // Fallback: Se a montagem automática falhar, tentamos carregar sem parâmetros
-            tokenizer = await lib.AutoTokenizer.from_pretrained(BASE_URL);
-            console.log("✅ Tokenizer carregado via Fallback!");
-        }
-    }
+    const dataVocab = await resVocab.json();
+    // Dependendo da estrutura do seu tokenizer.json:
+    vocab = dataVocab.model ? dataVocab.model.vocab : dataVocab;
+    
+    console.log("✅ Vocabulário carregado!");
 }
 
-// 2. Reconstrução dos chunks binários
+// 2. Reconstrói o modelo a partir dos chunks (Sua lógica de chunks)
 async function reconstruirModelo() {
     console.log("🧠 Reconstruindo modelo binário...");
     const path = `${BASE_URL}onnx/chunks/`; 
@@ -84,46 +50,41 @@ async function reconstruirModelo() {
     }
 }
 
-// 3. Inicialização da Sessão ONNX (Modo Conservador)
+// 3. Inicialização da IA
 const carregarIA = async () => {
-    if (session && tokenizer) return;
-    
-    if (carregando) {
-        while (carregando) { await new Promise(r => setTimeout(r, 500)); }
-        return;
-    }
+    if (session && vocab) return;
+    if (carregando) return;
 
     carregando = true;
     try {
-        // --- TRAVAS DE MEMÓRIA (Evita memory access out of bounds) ---
+        // Configurações de segurança para o ONNX no Worker
         if (self.ort) {
             self.ort.env.wasm.numThreads = 1;
-            self.ort.env.wasm.simd = false; 
-            self.ort.env.wasm.proxy = false;
+            self.ort.env.wasm.simd = false;
             self.ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.1/dist/';
         }
-        
-        const modelBuffer = await reconstruirModelo();
-        console.log("🚀 Iniciando sessão ONNX (WASM)...");
-        
-        // Usamos apenas WASM para garantir que rode em qualquer navegador sem Cross-Origin-Isolation
+
+        const [modelBuffer] = await Promise.all([
+            reconstruirModelo(),
+            carregarTokenizerManual()
+        ]);
+
+        console.log("🚀 Iniciando sessão ONNX...");
         session = await self.ort.InferenceSession.create(modelBuffer, {
             executionProviders: ['wasm'],
             graphOptimizationLevel: 'all'
         });
 
-        await configurarTokenizer();
-        
-        console.log("✅ Motor e Tokenizer prontos!");
+        console.log("✅ Sistema pronto (ONNX + Vocab Manual)!");
     } catch (e) {
-        console.error("❌ Falha crítica no carregamento:", e);
+        console.error("❌ Falha crítica:", e);
         self.postMessage({ tipo: 'ERRO', mensagem: e.message });
     } finally {
         carregando = false;
     }
 };
 
-// 4. Listener de Mensagens Principal
+// 4. Listener de Mensagens
 self.onmessage = async (e) => {
     const { tipo, texto } = e.data;
     
@@ -135,12 +96,11 @@ self.onmessage = async (e) => {
         }
         
         if (tipo === 'PROCESSAR' && texto) {
-            // Assume que 'processarLinhasComClassificador' foi injetado via processador.js
+            // Aqui você usa a sua função que tokeniza manualmente usando o objeto 'vocab'
+            // enviando para o ONNX (session)
             if (typeof processarLinhasComClassificador === 'function') {
-                const dados = await processarLinhasComClassificador(texto.split('\n'), session);
+                const dados = await processarLinhasComClassificador(texto.split('\n'), session, vocab);
                 self.postMessage({ tipo: 'RESULTADO', dados });
-            } else {
-                self.postMessage({ tipo: 'ERRO', mensagem: "Função de processamento não encontrada." });
             }
         }
     }
