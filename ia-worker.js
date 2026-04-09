@@ -39,33 +39,35 @@ async function reconstruirModelo() {
 /**
  * Inicializa a IA e importa o processador lógico
  */
-const carregarIA = async () => {
-    if (!session) {
-        // Configurações globais de performance
-        self.ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/';
-        self.ort.env.wasm.numThreads = Math.min(navigator.hardwareConcurrency || 4, 8); 
+let carregando = false; 
 
+const carregarIA = async () => {
+    if (session) return;
+    if (carregando) {
+        // Se já estiver carregando, espera um pouco para não duplicar
+        while (carregando) { await new Promise(r => setTimeout(r, 500)); }
+        return;
+    }
+
+    carregando = true;
+    try {
+        self.ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/';
         const modelBuffer = await reconstruirModelo();
         
-        console.log("🚀 Iniciando sessão com DistilBERT Quantizado...");
+        console.log("🚀 Iniciando sessão ONNX...");
         
-        try {
-            // TENTATIVA 1: WebGPU (Placa de vídeo - Ultra Rápido)
-            session = await self.ort.InferenceSession.create(modelBuffer, {
-                executionProviders: ['webgpu'],
-                graphOptimizationLevel: 'all'
-            });
-            console.log("⚡ WebGPU Ativado!");
-        } catch (e) {
-            console.warn("⚠️ WebGPU não disponível, tentando WASM com SIMD...");
-            // TENTATIVA 2: WASM (CPU - Rápido)
-            session = await self.ort.InferenceSession.create(modelBuffer, {
-                executionProviders: ['wasm'],
-                graphOptimizationLevel: 'all'
-            });
-            console.log("🐢 Rodando via CPU (WASM).");
-        }
+        // Tentativa de WebGPU (Rápido) ou WASM (Fallback)
+        const options = { executionProviders: ['webgpu', 'wasm'], graphOptimizationLevel: 'all' };
+        session = await self.ort.InferenceSession.create(modelBuffer, options);
+        
+        // CARREGA O TOKENIZADOR DO GITHUB (Busca tokenizer.json e tokenizer_config.json)
         tokenizer = await AutoTokenizer.from_pretrained(BASE_URL);
+        
+        console.log("✅ IA e Tokenizador prontos!");
+    } catch (e) {
+        console.error("Falha ao carregar motor:", e);
+    } finally {
+        carregando = false;
     }
 };
 
