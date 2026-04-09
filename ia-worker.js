@@ -44,11 +44,11 @@ const carregarIA = async () => {
         // Não passamos o BASE_URL de novo! 
         // Como o remoteHost já é o BASE_URL, passamos apenas './'
         // para ele buscar na raiz do remoteHost.
-        const tokenizer = await AutoTokenizer.from_pretrained('./', {
+        const tokenizer = await AutoTokenizer.from_pretrained('meu-modelo', {
             remote_only: true
         });
 
-        classificador = await pipeline('text-classification', '', {
+        classificador = await pipeline('text-classification', 'meu-modelo', {
             model_file_name: modelBuffer, 
             tokenizer: tokenizer,
             quantized: true
