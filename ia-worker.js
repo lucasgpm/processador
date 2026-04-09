@@ -1,5 +1,3 @@
-// 1. Carrega as bibliotecas necessárias
-importScripts('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2');
 importScripts('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js');
 // Nota: O ort (onnxruntime) já é injetado pelo seu script de montagem do Worker
 
@@ -12,20 +10,27 @@ const BASE_URL = 'https://lucasgpm.github.io/processador/';
 // Troque o topo do seu ia-worker.js por isso:
 
 async function configurarTokenizer() {
-    // Tentamos várias formas que a biblioteca pode se autodenominar
-    const lib = self.Transformers || self.transformers || (self.Xenova && self.Xenova.Transformers);
+    // TRUQUE: No Worker, o Xenova costuma se esconder dentro do objeto global 'transformers' (minúsculo)
+    // Se não estiver lá, vamos tentar capturar o que o script injetou.
+    const lib = self.transformers || self.Transformers || self.Xenova;
     
     if (!lib) {
-        console.error("Estado do self:", Object.keys(self)); // Log para debug
-        throw new Error("Biblioteca Transformers não carregada. Verifique o importScripts.");
+        // Se ainda não achou, vamos tentar acessar os membros diretamente do self
+        // Algumas versões injetam 'AutoTokenizer' direto no escopo global do worker
+        if (self.AutoTokenizer) {
+            console.log("🚀 AutoTokenizer encontrado diretamente no self!");
+            if (!tokenizer) {
+                tokenizer = await self.AutoTokenizer.from_pretrained(BASE_URL);
+            }
+            return;
+        }
+        throw new Error("Biblioteca Transformers não detectada. Verifique o importScripts.");
     }
 
     if (!tokenizer) {
-        console.log("📝 Carregando Tokenizer...");
-        // Forçamos o uso apenas dos arquivos que você tem no seu GitHub
+        console.log("📝 Carregando Tokenizer do GitHub...");
         lib.env.allowLocalModels = false;
-        lib.env.allowRemoteModels = true; 
-        
+        // Usamos o objeto lib que encontramos
         tokenizer = await lib.AutoTokenizer.from_pretrained(BASE_URL);
     }
 }
