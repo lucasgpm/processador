@@ -1,11 +1,9 @@
-import { pipeline, env, AutoTokenizer, RawModel } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.1';
+import { pipeline, env, AutoTokenizer, AutoModel } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.1';
 
 const BASE_URL = 'https://lucasgpm.github.io/processador/';
 
-// CONFIGURAÇÃO DE SEGURANÇA:
-// Deixamos 'local' como true para ela aceitar os buffers que vamos injetar.
-env.allowRemoteModels = false; 
-env.allowLocalModels = true; 
+env.allowRemoteModels = false;
+env.allowLocalModels = true;
 
 let classificador;
 let processarLinhasComClassificador;
@@ -47,23 +45,21 @@ const carregarIA = async () => {
         const tokenizerData = await tokenizerRes.json();
         const tokenizerConfigData = await tokenizerConfigRes.json();
 
-        console.log("🔄 Inicializando componentes manualmente...");
+        console.log("🔄 Inicializando componentes...");
         const tokenizer = new AutoTokenizer(tokenizerConfigData, tokenizerData);
         
-        // Em vez de usar pipeline(), usamos o RawModel para carregar o buffer diretamente
-        // Isso evita que a lib tente tratar o buffer como uma URL (erro t.replace)
-        const model = await RawModel.from_pretrained('meu-modelo', {
+        // Usamos AutoModel para criar a instância a partir do buffer
+        const model = await AutoModel.from_pretrained('meu-modelo', {
             model_data: modelBuffer,
             config: configData,
             quantized: true
         });
 
-        console.log("🚀 Criando Pipeline de Classificação...");
+        console.log("🚀 Criando Pipeline...");
         
-        // Agora criamos o pipeline passando o modelo e tokenizer JÁ INSTANCIADOS
+        // Passamos o modelo já pronto. O pipeline não tentará mais fazer replace na URL.
         classificador = await pipeline('text-classification', model, {
-            tokenizer: tokenizer,
-            config: configData
+            tokenizer: tokenizer
         });
 
         console.log("✅ IA Carregada com sucesso!");
