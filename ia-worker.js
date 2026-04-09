@@ -1,4 +1,4 @@
-import { pipeline, env, AutoTokenizer } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.1';
+import { pipeline, env, AutoTokenizer, RawModel } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.1';
 
 const BASE_URL = 'https://lucasgpm.github.io/processador/';
 
@@ -34,36 +34,36 @@ async function reconstruirCerebroIA() {
 const carregarIA = async () => {
     if (!classificador) {
         const modelBuffer = await reconstruirCerebroIA();
-
-        console.log("📂 Baixando arquivos de configuração manualmente...");
         const modeloPath = `${BASE_URL}meu-modelo/`;
 
+        console.log("📂 Baixando configurações...");
         const [configRes, tokenizerRes, tokenizerConfigRes] = await Promise.all([
             fetch(`${modeloPath}config.json`),
             fetch(`${modeloPath}tokenizer.json`),
             fetch(`${modeloPath}tokenizer_config.json`)
         ]);
 
-        if (!configRes.ok || !tokenizerRes.ok || !tokenizerConfigRes.ok) {
-            throw new Error("Erro ao baixar arquivos JSON do seu GitHub.");
-        }
-
         const configData = await configRes.json();
         const tokenizerData = await tokenizerRes.json();
         const tokenizerConfigData = await tokenizerConfigRes.json();
 
-        console.log("🔄 Inicializando Tokenizer com dados locais...");
+        console.log("🔄 Inicializando componentes manualmente...");
         const tokenizer = new AutoTokenizer(tokenizerConfigData, tokenizerData);
-
-        console.log("🚀 Montando Pipeline final...");
-
-        // Com allowLocalModels = true, ela aceitará o modelBuffer sem reclamar
-        classificador = await pipeline('text-classification', modelBuffer, {
-            tokenizer: tokenizer,
+        
+        // Em vez de usar pipeline(), usamos o RawModel para carregar o buffer diretamente
+        // Isso evita que a lib tente tratar o buffer como uma URL (erro t.replace)
+        const model = await RawModel.from_pretrained('meu-modelo', {
+            model_data: modelBuffer,
             config: configData,
-            quantized: true,
-            // ESSA LINHA ABAIXO É O TRUQUE:
-            model_file_name: 'model_quantized.onnx' 
+            quantized: true
+        });
+
+        console.log("🚀 Criando Pipeline de Classificação...");
+        
+        // Agora criamos o pipeline passando o modelo e tokenizer JÁ INSTANCIADOS
+        classificador = await pipeline('text-classification', model, {
+            tokenizer: tokenizer,
+            config: configData
         });
 
         console.log("✅ IA Carregada com sucesso!");
