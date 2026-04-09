@@ -56,32 +56,39 @@ function softmax(logits) {
 // --- FUNÇÃO 3: O PROCESSADOR COMPLETO ---
 async function processarLinhasComClassificador(linhas, session, vocab) {
     const resultados = [];
-    const maxLength = 128;
-    const BATCH_SIZE = 16; // Processamos 16 linhas por vez
+    const BATCH_SIZE = 8; 
+    const TETO_MAX_LENGTH = 128;
 
-    // Filtramos primeiro as linhas válidas para não gastar IA com lixo
+    // MANTIDO: Filtro original exatamente como você tinha
     const linhasValidas = linhas
         .map(l => l.trim())
         .filter(t => t.length >= 5 && /[:\-\t=|—]/.test(t));
 
-    // Processamos em grupos (Batches)
+    const totalBatches = Math.ceil(linhasValidas.length / BATCH_SIZE);
+
     for (let i = 0; i < linhasValidas.length; i += BATCH_SIZE) {
         const batchAtual = linhasValidas.slice(i, i + BATCH_SIZE);
         const atualBatchSize = batchAtual.length;
 
-        // Criamos os buffers para o tamanho exato deste batch
-        const inputIdsData = new BigInt64Array(atualBatchSize * maxLength);
-        const attentionMaskData = new BigInt64Array(atualBatchSize * maxLength);
+        // --- DINÂMICO: Tokenizamos antes para saber o tamanho real do lote ---
+        const tokensDoBatch = batchAtual.map(t => tokenizeWordPiece(t, vocab));
+        const maiorLinhaNoBatch = Math.max(...tokensDoBatch.map(t => t.length));
+        
+        // Ajusta o tamanho do "contêiner" para o tamanho da maior frase do lote
+        const dynamicMaxLength = Math.min(maiorLinhaNoBatch + 2, TETO_MAX_LENGTH);
 
-        // Preenchemos os dados de todas as linhas do batch
+        // --- OTIMIZAÇÃO: Alocação precisa de memória ---
+        const inputIdsData = new BigInt64Array(atualBatchSize * dynamicMaxLength);
+        const attentionMaskData = new BigInt64Array(atualBatchSize * dynamicMaxLength);
+
         batchAtual.forEach((t, index) => {
-            const tokenIds = tokenizeWordPiece(t, vocab);
-            const offset = index * maxLength;
+            const tokenIds = tokensDoBatch[index];
+            const offset = index * dynamicMaxLength;
 
             inputIdsData[offset] = 101n; // [CLS]
             let pos = 1;
             for (const id of tokenIds) {
-                if (pos >= maxLength - 1) break;
+                if (pos >= dynamicMaxLength - 1) break;
                 inputIdsData[offset + pos] = id;
                 attentionMaskData[offset + pos] = 1n;
                 pos++;
@@ -91,40 +98,32 @@ async function processarLinhasComClassificador(linhas, session, vocab) {
             attentionMaskData[offset + pos] = 1n;
         });
 
-        // Criamos os Tensores para o BATCH inteiro [N, 128]
-        const tensorIds = new ort.Tensor('int64', inputIdsData, [atualBatchSize, maxLength]);
-        const tensorMask = new ort.Tensor('int64', attentionMaskData, [atualBatchSize, maxLength]);
-
         try {
-            // EXECUÇÃO ÚNICA PARA O LOTE
             const output = await session.run({
-                input_ids: tensorIds,
-                attention_mask: tensorMask
+                input_ids: new ort.Tensor('int64', inputIdsData, [atualBatchSize, dynamicMaxLength]),
+                attention_mask: new ort.Tensor('int64', attentionMaskData, [atualBatchSize, dynamicMaxLength])
             });
 
             const outputData = output[session.outputNames[0]].data;
             const numLabels = outputData.length / atualBatchSize;
 
-            // Processamos os resultados de cada linha do lote
             batchAtual.forEach((t, index) => {
-                // Extrai os logits desta linha específica
                 const inicio = index * numLabels;
-                const fim = inicio + numLabels;
-                const logits = Array.from(outputData.slice(inicio, fim));
-                
+                const logits = Array.from(outputData.slice(inicio, inicio + numLabels));
                 const scores = softmax(logits);
                 const scoreConfianca = Math.max(...scores);
 
-                // --- SUA LÓGICA DE EXTRAÇÃO MANTIDA ---
+                // MANTIDO: Lógica de divisão e limpeza original
                 const divisorMatch = t.match(/[:\t=|—]| - /);
                 if (divisorMatch) {
                     const indiceDivisor = divisorMatch.index;
                     const chaveBruta = t.substring(0, indiceDivisor).trim();
                     const valor = t.substring(indiceDivisor + divisorMatch[0].length).trim();
 
-                    let chaveLimpa = limparChave(chaveBruta);
+                    const chaveLimpa = limparChave(chaveBruta);
                     const palavrasNaChave = chaveLimpa.split(/\s+/).filter(p => p.length > 0).length;
 
+                    // MANTIDO: Seus filtros de validação exatos
                     if (scoreConfianca > 0.3 && palavrasNaChave > 0 && palavrasNaChave <= 3 && valor.length > 5) {
                         resultados.push({
                             palavra: chaveLimpa.toUpperCase(),
@@ -133,8 +132,13 @@ async function processarLinhasComClassificador(linhas, session, vocab) {
                     }
                 }
             });
+
+            // Notifica o progresso para a barra de carregamento
+            const progresso = Math.round(((i / BATCH_SIZE) + 1) / totalBatches * 100);
+            self.postMessage({ tipo: 'PROGRESSO', valor: Math.min(progresso, 100) });
+
         } catch (e) {
-            console.warn("Erro no processamento do lote:", e);
+            console.error("Erro no processamento do lote:", e);
         }
     }
     return resultados;
