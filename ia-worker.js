@@ -1,5 +1,4 @@
-// 1. Carrega a biblioteca de um CDN alternativo que registra melhor o objeto global
-importScripts('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2');
+importScripts('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js');
 
 // 2. Variáveis globais
 let tokenizer;
@@ -8,25 +7,31 @@ let carregando = false;
 const BASE_URL = 'https://lucasgpm.github.io/processador/';
 
 async function configurarTokenizer() {
-    // Tentamos todas as variações de nome que o Xenova assume em Workers
-    const lib = self.transformers || self.Transformers || (self.Xenova && self.Xenova.transformers);
-    
+    // 1. Tenta pegar do objeto global padrão
+    let lib = self.transformers || self.Transformers;
+
+    // 2. Se não achou, tenta extrair do que o script do CDN injetou
+    if (!lib && self.Xenova) lib = self.Xenova.transformers;
+
     if (!lib) {
-        console.log("Variáveis disponíveis no self:", Object.keys(self));
-        throw new Error("Biblioteca Transformers não detectada. Verifique o importScripts.");
+        console.error("Scripts carregados no worker:", Object.keys(self));
+        throw new Error("Biblioteca Transformers não detectada. Tente limpar o cache do navegador.");
     }
 
     if (!tokenizer) {
-        console.log("📝 Lendo arquivos do Tokenizer (vocab, special_tokens, json)...");
+        console.log("📝 Carregando Tokenizer do GitHub...");
         
-        // Configurações para ler do seu GitHub
-        lib.env.allowLocalModels = false;
-        lib.env.allowRemoteModels = true;
+        // Desativa busca automática no Hugging Face para evitar erro 400
+        lib.env.allowLocalModels = true; 
+        lib.env.allowRemoteModels = false;
+        lib.env.localModelPath = BASE_URL; 
+
+        // IMPORTANTE: Isso diz à lib para procurar vocab.txt e os jsons na raiz da BASE_URL
+        tokenizer = await lib.AutoTokenizer.from_pretrained(BASE_URL, {
+            base_url: BASE_URL
+        });
         
-        // Aqui ele vai buscar automaticamente: 
-        // tokenizer.json, tokenizer_config.json, vocab.txt e special_tokens_map.json
-        tokenizer = await lib.AutoTokenizer.from_pretrained(BASE_URL);
-        console.log("✅ Tokenizer configurado com sucesso!");
+        console.log("✅ Tokenizer carregado!");
     }
 }
 
