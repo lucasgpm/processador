@@ -1,26 +1,27 @@
-import { 
-    pipeline, 
-    env, 
-    AutoTokenizer, 
-    DistilBertForSequenceClassification // Classe específica, chega de "Auto"
-} from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.1';
+// Importamos o motor da Microsoft e uma versão leve do tokenizer
+import * as ort from 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js';
 
 const BASE_URL = 'https://lucasgpm.github.io/processador/';
-
-env.allowRemoteModels = false;
-env.allowLocalModels = true; 
-
-let classificador;
+let session;
+let tokenizer;
 let processarLinhasComClassificador;
 
-async function reconstruirCerebroIA() {
-    console.log("🧠 Baixando pedaços do modelo...");
+// --- FUNÇÃO DE TOKENIZAÇÃO MANUAL (Simplificada para DistilBERT) ---
+// O DistilBERT usa WordPiece. Para não complicar, vamos carregar o vocab.json
+async function carregarTokenizer() {
+    const res = await fetch(`${BASE_URL}meu-modelo/tokenizer.json`);
+    const data = await res.json();
+    return data; 
+}
+
+// --- RECONSTRUÇÃO DO MODELO (Igual à sua, pois funciona bem) ---
+async function reconstruirModelo() {
+    console.log("🧠 Reconstruindo modelo para o ONNX Runtime...");
     const path = `${BASE_URL}onnx/chunks/`; 
     const partes = ['model_part_0.bin', 'model_part_1.bin', 'model_part_2.bin'];
     
     const buffers = await Promise.all(partes.map(async (nome) => {
         const res = await fetch(path + nome);
-        if (!res.ok) throw new Error(`Erro ao baixar: ${nome}`);
         return res.arrayBuffer();
     }));
 
@@ -35,48 +36,22 @@ async function reconstruirCerebroIA() {
 }
 
 const carregarIA = async () => {
-    if (!classificador) {
-        const modelBuffer = await reconstruirCerebroIA();
-        const modeloPath = `${BASE_URL}meu-modelo/`;
-
-        console.log("📂 Carregando JSONs...");
-        const [configRes, tokenizerRes, tokenizerConfigRes] = await Promise.all([
-            fetch(`${modeloPath}config.json`),
-            fetch(`${modeloPath}tokenizer.json`),
-            fetch(`${modeloPath}tokenizer_config.json`)
-        ]);
-
-        const configJSON = await configRes.json();
-        const tokenizerJSON = await tokenizerRes.json();
-        const tokenizerConfigJSON = await tokenizerConfigRes.json();
-
-        console.log("🔄 Inicializando Tokenizer...");
-        const tokenizer = new AutoTokenizer(tokenizerConfigJSON, tokenizerJSON);
+    if (!session) {
+        const modelBuffer = await reconstruirModelo();
         
-        console.log("🔄 Forçando carregamento do DistilBert...");
-        
-        // AQUI ESTÁ A MUDANÇA: Usamos a classe específica e o método 'from_pretrained'
-        // Mas o primeiro argumento é um nome qualquer, o que importa é o 'model_data'
-        const model = await DistilBertForSequenceClassification.from_pretrained('distilbert', {
-            model_data: modelBuffer,
-            config: configJSON, // Passamos o JSON bruto direto
-            quantized: true,
-            local_files_only: true
+        console.log("🚀 Iniciando sessão ONNX...");
+        // O ORT carrega o buffer diretamente sem perguntar de pastas!
+        session = await ort.InferenceSession.create(modelBuffer, {
+            executionProviders: ['wasm'], 
+            graphOptimizationLevel: 'all'
         });
 
-        console.log("🚀 Criando Pipeline...");
-        
-        // Injetamos o modelo já instanciado
-        classificador = await pipeline('text-classification', model, {
-            tokenizer: tokenizer
-        });
+        console.log("✅ Motor ONNX pronto!");
 
-        console.log("✅ IA Carregada com sucesso!");
-        
+        // Importamos sua lógica (ajustaremos ela abaixo)
         const modulo = await import(`${BASE_URL}processador.js`);
         processarLinhasComClassificador = modulo.processarLinhasComClassificador;
     }
-    return classificador;
 };
 
 self.onmessage = async (e) => {
@@ -86,12 +61,13 @@ self.onmessage = async (e) => {
             await carregarIA();
             if (tipo === 'PRELOAD') self.postMessage({ tipo: 'PRONTO' });
             if (tipo === 'PROCESSAR' && texto) {
-                const dados = await processarLinhasComClassificador(texto.split('\n'), classificador);
+                // Aqui passamos a 'session' em vez do 'classificador'
+                const dados = await processarLinhasComClassificador(texto.split('\n'), session);
                 self.postMessage({ tipo: 'RESULTADO', dados });
             }
         }
     } catch (err) {
-        console.error("❌ Erro no Worker:", err);
+        console.error("❌ Erro no motor ONNX:", err);
         self.postMessage({ tipo: 'ERRO', mensagem: err.message });
     }
 };
