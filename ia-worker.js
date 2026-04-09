@@ -1,5 +1,4 @@
-importScripts('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.1');
-const { pipeline, env, AutoTokenizer } = transformers;
+import { pipeline, env, AutoTokenizer } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.1';
 
 env.allowLocalModels = true;
 env.allowRemoteModels = false;
