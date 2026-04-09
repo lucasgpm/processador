@@ -1,14 +1,12 @@
 import { pipeline, env, AutoTokenizer } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.1';
 
-// DEFINA A URL BASE EXPLICITAMENTE
 const BASE_URL = 'https://lucasgpm.github.io/processador/';
 
+// 1. CONFIGURAÇÃO DO AMBIENTE
 env.allowRemoteModels = true; 
 env.allowLocalModels = false;
-
-// ISSO AQUI é o que impede ele de ir no Hugging Face:
-env.remoteHost = BASE_URL; 
-env.remoteFileName = 'config'; // Padrão, mas garante a busca no seu host
+env.remoteHost = BASE_URL;       // Diz onde é a "casa" dos arquivos
+env.remotePathTemplate = '{model}'; // FORÇA a lib a NÃO colocar "/resolve/main/" no link
 
 let classificador;
 let processarLinhasComClassificador;
@@ -40,9 +38,15 @@ const carregarIA = async () => {
     if (!classificador) {
         const modelBuffer = await reconstruirCerebroIA();
 
-        // Quando você chama isso, a lib faz: remoteHost + "tokenizer.json"
-        // Ou seja: https://lucasgpm.github.io/processador/tokenizer.json
-        const tokenizer = await AutoTokenizer.from_pretrained(BASE_URL);
+        console.log("🔄 Inicializando Tokenizer...");
+
+        // 2. O PULO DO GATO ESTÁ AQUI:
+        // Não passamos o BASE_URL de novo! 
+        // Como o remoteHost já é o BASE_URL, passamos apenas './'
+        // para ele buscar na raiz do remoteHost.
+        const tokenizer = await AutoTokenizer.from_pretrained('./', {
+            remote_only: true
+        });
 
         classificador = await pipeline('text-classification', 'meu-modelo', {
             model_file_name: modelBuffer, 
@@ -52,7 +56,6 @@ const carregarIA = async () => {
 
         console.log("🚀 IA Carregada com sucesso!");
 
-        // IMPORT DO PROCESSADOR COM URL ABSOLUTA
         const modulo = await import(`${BASE_URL}processador.js`);
         processarLinhasComClassificador = modulo.processarLinhasComClassificador;
     }
