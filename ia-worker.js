@@ -1,10 +1,11 @@
-// Importamos o motor da Microsoft e uma versão leve do tokenizer
-import * as ort from 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js';
+// Removemos o import antigo e usamos o importScripts que é mais estável para o ORT em Workers
+importScripts('https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js');
 
 const BASE_URL = 'https://lucasgpm.github.io/processador/';
 let session;
-let tokenizer;
 let processarLinhasComClassificador;
+
+// O objeto 'ort' agora deve estar disponível globalmente
 
 // --- FUNÇÃO DE TOKENIZAÇÃO MANUAL (Simplificada para DistilBERT) ---
 // O DistilBERT usa WordPiece. Para não complicar, vamos carregar o vocab.json
