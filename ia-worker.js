@@ -1,12 +1,11 @@
-// 1. Carrega o ONNX (Global 'ort' fica disponível)
+// ia-worker.js no GitHub
 importScripts('https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js');
 
-// 2. Carrega sua lógica de processamento
-// Importante: No seu processador.js, a função NÃO deve ter 'export'. 
-// Ela deve ser declarada apenas como: async function processarLinhasComClassificador(...)
+// Para o processador.js, também use URL absoluta
 importScripts('https://lucasgpm.github.io/processador/processador.js');
 
 const BASE_URL = 'https://lucasgpm.github.io/processador/';
+
 let session;
 let processarLinhasComClassificador = null;
 
