@@ -20,11 +20,10 @@ const BASE_URL = 'https://lucasgpm.github.io/processador/';
 
 // 1. Configuração do Tokenizer com "Pesca" de objetos globais
 async function configurarTokenizer() {
-    // Tenta encontrar o objeto consolidado ou monta um a partir dos fragmentos no self
     let lib = self.transformers || self.Xenova;
 
     if (!lib) {
-        console.log("🔍 Remontando objeto Transformers a partir do escopo global...");
+        console.log("🔍 Remontando objeto Transformers...");
         lib = {
             AutoTokenizer: self.AutoTokenizer || self.__webpack_exports__AutoTokenizer,
             env: self.env || self.__webpack_exports__env
@@ -32,21 +31,31 @@ async function configurarTokenizer() {
     }
 
     if (!lib.AutoTokenizer) {
-        throw new Error("Biblioteca Transformers (AutoTokenizer) não encontrada no escopo.");
+        throw new Error("Biblioteca Transformers não encontrada no escopo.");
     }
 
     if (!tokenizer) {
-        console.log("📝 Carregando Tokenizer da Base URL...");
+        console.log("📝 Carregando Tokenizer do GitHub...");
         
-        // Bloqueia chamadas ao Hugging Face e aponta para o seu GitHub
+        // --- AJUSTE DE PERMISSÃO AQUI ---
         if (lib.env) {
             lib.env.allowLocalModels = true;
-            lib.env.allowRemoteModels = false;
+            // Permitimos "remoto" porque o GitHub para o localhost é considerado remoto
+            lib.env.allowRemoteModels = true; 
             lib.env.localModelPath = BASE_URL;
         }
 
-        tokenizer = await lib.AutoTokenizer.from_pretrained(BASE_URL);
-        console.log("✅ Tokenizer carregado!");
+        try {
+            // Tentamos carregar explicitamente da URL do GitHub
+            tokenizer = await lib.AutoTokenizer.from_pretrained(BASE_URL, {
+                // Forçamos a lib a não procurar no cache do navegador se der erro
+                use_cache: false 
+            });
+            console.log("✅ Tokenizer carregado!");
+        } catch (err) {
+            console.error("Erro específico no from_pretrained:", err);
+            throw err;
+        }
     }
 }
 
