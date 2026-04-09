@@ -41,10 +41,8 @@ const carregarIA = async () => {
         const modelBuffer = await reconstruirModelo();
         
         console.log("🚀 Iniciando sessão ONNX...");
-        // O ORT carrega o buffer diretamente sem perguntar de pastas!
-        session = await ort.InferenceSession.create(modelBuffer, {
-            executionProviders: ['wasm'], 
-            graphOptimizationLevel: 'all'
+        session = await self.ort.InferenceSession.create(modelBuffer, {
+            executionProviders: ['wasm']
         });
 
         console.log("✅ Motor ONNX pronto!");
