@@ -1,5 +1,6 @@
 // 1. Carrega as bibliotecas necessárias
 importScripts('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2');
+importScripts('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js');
 // Nota: O ort (onnxruntime) já é injetado pelo seu script de montagem do Worker
 
 // 2. Variáveis globais e Configurações
@@ -8,15 +9,23 @@ let session;
 let carregando = false;
 const BASE_URL = 'https://lucasgpm.github.io/processador/';
 
-// 3. Função para configurar o Tokenizer usando a biblioteca injetada
+// Troque o topo do seu ia-worker.js por isso:
+
 async function configurarTokenizer() {
-    const lib = self.Transformers || self.transformers;
-    if (!lib) throw new Error("Biblioteca Transformers não carregada.");
+    // Tentamos várias formas que a biblioteca pode se autodenominar
+    const lib = self.Transformers || self.transformers || (self.Xenova && self.Xenova.Transformers);
+    
+    if (!lib) {
+        console.error("Estado do self:", Object.keys(self)); // Log para debug
+        throw new Error("Biblioteca Transformers não carregada. Verifique o importScripts.");
+    }
 
     if (!tokenizer) {
-        console.log("📝 Carregando Tokenizer de:", BASE_URL);
-        // Desativamos a busca em cache local para evitar erros no GitHub Pages
-        lib.env.allowLocalModels = false; 
+        console.log("📝 Carregando Tokenizer...");
+        // Forçamos o uso apenas dos arquivos que você tem no seu GitHub
+        lib.env.allowLocalModels = false;
+        lib.env.allowRemoteModels = true; 
+        
         tokenizer = await lib.AutoTokenizer.from_pretrained(BASE_URL);
     }
 }
