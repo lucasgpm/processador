@@ -9,30 +9,23 @@ export function limparChave(chaveBruta) {
 }
 
 // Essa função agora será usada PELO WORKER
-export async function processarLinhasComClassificador(linhas, classifier) {
-    const resultadoLimpo = [];
+export async function processarLinhasComClassificador(linhas, session) {
+    // Nota: Para classificação real, precisaríamos tokenizar. 
+    // Como teste de fogo para ver se o modelo CARREGA, tente rodar um input vazio:
+    
+    const resultados = [];
     for (const linha of linhas) {
-        const t = linha.trim();
-        if (t.length < 5 || !/[:\-\t=|—]/.test(t)) continue;
-
-        const analysis = await classifier(t);
-        const scoreConfianca = analysis[0].score;
-
-        const divisorMatch = t.match(/[:\t=|—]| - /); 
-        if (!divisorMatch) continue;
-
-        const chaveBruta = t.substring(0, divisorMatch.index).trim();
-        const valor = t.substring(divisorMatch.index + divisorMatch[0].length).trim();
+        // Exemplo simplificado de input para o DistilBERT (ids fictícios para teste)
+        const inputIds = new BigInt64Array(128).fill(0n); // Exemplo de tamanho fixo
+        const attentionMask = new BigInt64Array(128).fill(1n);
         
-        let chaveLimpa = limparChave(chaveBruta);
-        const palavrasNaChave = chaveLimpa.split(/\s+/).filter(p => p.length > 0).length;
+        const feeds = {
+            input_ids: new ort.Tensor('int64', inputIds, [1, 128]),
+            attention_mask: new ort.Tensor('int64', attentionMask, [1, 128])
+        };
 
-        if (scoreConfianca > 0.3 && palavrasNaChave > 0 && palavrasNaChave <= 3 && valor.length > 5) {
-            resultadoLimpo.push({
-                palavra: chaveLimpa.toUpperCase(),
-                dica: valor
-            });
-        }
+        const output = await session.run(feeds);
+        resultados.push({ texto: linha, raw: output });
     }
-    return resultadoLimpo;
+    return resultados;
 }
