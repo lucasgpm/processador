@@ -1,25 +1,26 @@
 import { pipeline, env, AutoTokenizer } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.1';
 
+// URL base do seu GitHub Pages
 const BASE_URL = 'https://lucasgpm.github.io/processador/';
 
-// 1. CONFIGURAÇÃO DO AMBIENTE
-env.allowRemoteModels = true; 
+// Configurações globais simplificadas para evitar duplicação de URL
+env.allowRemoteModels = true;
 env.allowLocalModels = false;
-env.remoteHost = BASE_URL;       // Diz onde é a "casa" dos arquivos
-env.remotePathTemplate = '{model}'; // FORÇA a lib a NÃO colocar "/resolve/main/" no link
 
 let classificador;
 let processarLinhasComClassificador;
 
+/**
+ * Reconstrói o arquivo do modelo a partir dos pedaços binários
+ */
 async function reconstruirCerebroIA() {
     console.log("🧠 Baixando pedaços do modelo...");
     
-    // USAR URL ABSOLUTA AQUI
     const path = `${BASE_URL}onnx/chunks/`; 
     const partes = ['model_part_0.bin', 'model_part_1.bin', 'model_part_2.bin'];
     
     const buffers = await Promise.all(partes.map(async (nome) => {
-        const res = await fetch(path + nome); // Fetch agora tem a URL completa
+        const res = await fetch(path + nome);
         if (!res.ok) throw new Error(`Erro ao baixar parte: ${nome}`);
         return res.arrayBuffer();
     }));
@@ -34,28 +35,29 @@ async function reconstruirCerebroIA() {
     return combined;
 }
 
+/**
+ * Carrega o Tokenizer, a Configuração e o Pipeline
+ */
 const carregarIA = async () => {
     if (!classificador) {
-        // 1. Reconstrói o arquivo .bin
+        // 1. Obtém o buffer do modelo reconstruído
         const modelBuffer = await reconstruirCerebroIA();
 
         console.log("🔄 Inicializando Tokenizer e Configurações...");
         
-        // Caminho para a pasta onde estão os JSONs
         const modeloPath = `${BASE_URL}meu-modelo/`;
 
-        // Carregamos o Tokenizer passando a URL da PASTA
-        // O erro t.replace rolou porque a lib se confundiu com os argumentos
+        // 2. Carrega o Tokenizer usando a URL da pasta (evita erro t.replace)
         const tokenizer = await AutoTokenizer.from_pretrained(modeloPath);
 
-        // Carregamos a config manualmente para garantir que o pipeline não se perca
+        // 3. Carrega o config.json manualmente para evitar erro de model type null
         const configRes = await fetch(`${modeloPath}config.json`);
         if (!configRes.ok) throw new Error("Não foi possível carregar o config.json");
         const configData = await configRes.json();
 
         console.log("🔄 Montando Pipeline com Buffer...");
 
-        // O SEGREDO: Passamos o buffer, e nas opções passamos o objeto config
+        // 4. Inicializa o pipeline injetando o buffer e o objeto de configuração
         classificador = await pipeline('text-classification', modelBuffer, {
             tokenizer: tokenizer,
             config: configData,
@@ -64,13 +66,16 @@ const carregarIA = async () => {
 
         console.log("🚀 IA Carregada com sucesso!");
         
+        // 5. Importa o script de processamento lógico
         const modulo = await import(`${BASE_URL}processador.js`);
         processarLinhasComClassificador = modulo.processarLinhasComClassificador;
     }
     return classificador;
 };
 
-// Listener de mensagens do Worker
+/**
+ * Listener de mensagens do Worker
+ */
 self.onmessage = async (e) => {
     const { tipo, texto } = e.data;
     try {
