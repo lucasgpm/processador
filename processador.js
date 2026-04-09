@@ -9,35 +9,24 @@ function limparChave(chaveBruta) {
 }
 
 async function processarLinhasComClassificador(linhas, session) {
-    const resultados = [];
-    console.log("🧐 Iniciando loop de processamento para", linhas.length, "linhas.");
+    const limpas = linhas.map(l => l.trim()).filter(l => l !== "");
+    if (limpas.length === 0) return [];
 
-    for (const linha of linhas) {
-        if (!linha.trim()) continue;
-
+    // Em vez de for individual, vamos processar em blocos (ex: 10 em 10)
+    // Para simplificar agora, vamos apenas logar o tempo:
+    console.time("Tempo de Inferência");
+    
+    const resultados = await Promise.all(limpas.map(async (linha) => {
         const inputIds = new BigInt64Array(128).fill(0n);
         const attentionMask = new BigInt64Array(128).fill(1n);
-        
         const feeds = {
             input_ids: new ort.Tensor('int64', inputIds, [1, 128]),
             attention_mask: new ort.Tensor('int64', attentionMask, [1, 128])
         };
+        const output = await session.run(feeds);
+        return { texto: linha, raw: output };
+    }));
 
-        try {
-            const output = await session.run(feeds);
-            console.log("🔍 Output bruto da IA para a linha:", linha, output);
-
-            // O ONNX puro retorna um objeto com chaves (ex: output.logits ou output.last_hidden_state)
-            // Precisamos garantir que estamos enviando algo que o modal.js entenda
-            resultados.push({ 
-                texto: linha, 
-                raw: output,
-                verificacao: "OK" 
-            });
-        } catch (e) {
-            console.error("❌ Falha na inferência da linha:", linha, e);
-        }
-    }
-    console.log("📤 Enviando resultados finais para o script principal:", resultados);
+    console.timeEnd("Tempo de Inferência");
     return resultados;
 }
