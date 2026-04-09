@@ -39,23 +39,24 @@ const carregarIA = async () => {
         const modelBuffer = await reconstruirCerebroIA();
 
         console.log("🔄 Inicializando Tokenizer...");
-
-        // 2. O PULO DO GATO ESTÁ AQUI:
-        // Não passamos o BASE_URL de novo! 
-        // Como o remoteHost já é o BASE_URL, passamos apenas './'
-        // para ele buscar na raiz do remoteHost.
         const tokenizer = await AutoTokenizer.from_pretrained('meu-modelo', {
             remote_only: true
         });
 
-        classificador = await pipeline('text-classification', 'meu-modelo', {
-            model_file_name: modelBuffer, 
+        console.log("🔄 Montando Pipeline (Usando buffer local)...");
+
+        // Aqui está o truque:
+        // Passamos o buffer DIRETO no lugar do nome do modelo
+        classificador = await pipeline('text-classification', modelBuffer, {
             tokenizer: tokenizer,
-            quantized: true
+            quantized: true,
+            // Informamos o nome apenas para a lib saber o formato, 
+            // mas ela usará o buffer que passamos antes
+            config: 'meu-modelo/config.json' 
         });
 
         console.log("🚀 IA Carregada com sucesso!");
-
+        
         const modulo = await import(`${BASE_URL}processador.js`);
         processarLinhasComClassificador = modulo.processarLinhasComClassificador;
     }
