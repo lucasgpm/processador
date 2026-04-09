@@ -2,13 +2,11 @@ import {
     pipeline, 
     env, 
     AutoTokenizer, 
-    AutoConfig,
-    AutoModelForSequenceClassification 
+    DistilBertForSequenceClassification // Classe específica, chega de "Auto"
 } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.1';
 
 const BASE_URL = 'https://lucasgpm.github.io/processador/';
 
-// Travas de segurança contra acessos externos
 env.allowRemoteModels = false;
 env.allowLocalModels = true; 
 
@@ -41,7 +39,7 @@ const carregarIA = async () => {
         const modelBuffer = await reconstruirCerebroIA();
         const modeloPath = `${BASE_URL}meu-modelo/`;
 
-        console.log("📂 Carregando configurações...");
+        console.log("📂 Carregando JSONs...");
         const [configRes, tokenizerRes, tokenizerConfigRes] = await Promise.all([
             fetch(`${modeloPath}config.json`),
             fetch(`${modeloPath}tokenizer.json`),
@@ -52,24 +50,23 @@ const carregarIA = async () => {
         const tokenizerJSON = await tokenizerRes.json();
         const tokenizerConfigJSON = await tokenizerConfigRes.json();
 
-        console.log("🔄 Preparando componentes...");
-        const config = new AutoConfig(configJSON);
+        console.log("🔄 Inicializando Tokenizer...");
         const tokenizer = new AutoTokenizer(tokenizerConfigJSON, tokenizerJSON);
         
-        /**
-         * PASSO CRÍTICO: Carregamos o modelo usando a classe de Sequence Classification
-         * passando o buffer diretamente. Isso evita o erro de "null" ou "No model specified".
-         */
-        const model = await AutoModelForSequenceClassification.from_pretrained('meu-modelo-local', {
+        console.log("🔄 Forçando carregamento do DistilBert...");
+        
+        // AQUI ESTÁ A MUDANÇA: Usamos a classe específica e o método 'from_pretrained'
+        // Mas o primeiro argumento é um nome qualquer, o que importa é o 'model_data'
+        const model = await DistilBertForSequenceClassification.from_pretrained('distilbert', {
             model_data: modelBuffer,
-            config: config,
+            config: configJSON, // Passamos o JSON bruto direto
             quantized: true,
             local_files_only: true
         });
 
-        console.log("🚀 Inicializando Pipeline com modelo injetado...");
+        console.log("🚀 Criando Pipeline...");
         
-        // Agora o pipeline recebe o objeto 'model' já instanciado em vez de uma string
+        // Injetamos o modelo já instanciado
         classificador = await pipeline('text-classification', model, {
             tokenizer: tokenizer
         });
