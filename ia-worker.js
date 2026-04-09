@@ -2,23 +2,20 @@ import {
     pipeline, 
     env, 
     AutoTokenizer, 
-    DistilBertForSequenceClassification 
+    AutoConfig 
 } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.1';
 
 const BASE_URL = 'https://lucasgpm.github.io/processador/';
 
-// Configurações de ambiente para isolamento total
+// Bloqueio de rede automático da lib
 env.allowRemoteModels = false;
 env.allowLocalModels = true; 
 
 let classificador;
 let processarLinhasComClassificador;
 
-/**
- * Reconstrói o modelo a partir dos pedaços binários
- */
 async function reconstruirCerebroIA() {
-    console.log("🧠 Baixando pedaços do DistilBERT...");
+    console.log("🧠 Baixando pedaços do modelo...");
     const path = `${BASE_URL}onnx/chunks/`; 
     const partes = ['model_part_0.bin', 'model_part_1.bin', 'model_part_2.bin'];
     
@@ -38,83 +35,64 @@ async function reconstruirCerebroIA() {
     return combined;
 }
 
-/**
- * Carregamento Ultra Master: Injeção Direta
- */
 const carregarIA = async () => {
     if (!classificador) {
-        // 1. Obtém o buffer binário
+        // 1. Pega o binário do modelo
         const modelBuffer = await reconstruirCerebroIA();
         const modeloPath = `${BASE_URL}meu-modelo/`;
 
-        console.log("📂 Carregando dicionários e configurações...");
+        console.log("📂 Carregando arquivos de configuração...");
         const [configRes, tokenizerRes, tokenizerConfigRes] = await Promise.all([
             fetch(`${modeloPath}config.json`),
             fetch(`${modeloPath}tokenizer.json`),
             fetch(`${modeloPath}tokenizer_config.json`)
         ]);
 
-        const configData = await configRes.json();
-        const tokenizerData = await tokenizerRes.json();
-        const tokenizerConfigData = await tokenizerConfigRes.json();
+        const configJSON = await configRes.json();
+        const tokenizerJSON = await tokenizerRes.json();
+        const tokenizerConfigJSON = await tokenizerConfigRes.json();
 
-        console.log("🔄 Inicializando Tokenizer Multilíngue...");
-        const tokenizer = new AutoTokenizer(tokenizerConfigData, tokenizerData);
+        // 2. Criamos a configuração e o tokenizer manualmente
+        const config = new AutoConfig(configJSON);
+        const tokenizer = new AutoTokenizer(tokenizerConfigJSON, tokenizerJSON);
         
-        console.log("🔄 Instanciando DistilBERT a partir do buffer...");
+        console.log("🔄 Montando Pipeline de forma direta...");
         
         /**
-         * O SEGREDO DO MASTER:
-         * Usamos a classe específica do seu modelo. 
-         * Passamos um nome fictício 'distilbert', mas entregamos o model_data.
+         * AQUI ESTÁ A MUDANÇA CRÍTICA:
+         * Em vez de chamar Model.from_pretrained, passamos o buffer diretamente para o pipeline.
+         * Para o pipeline aceitar o buffer sem tentar dar fetch, passamos 'null' ou um nome falso
+         * no primeiro parâmetro e injetamos o modelo via opções.
          */
-        const model = await DistilBertForSequenceClassification.from_pretrained('distilbert', {
-            model_data: modelBuffer,
-            config: configData,
+        classificador = await pipeline('text-classification', null, {
+            model_data: modelBuffer, // O binário do ONNX
+            config: config,          // O objeto de configuração
+            tokenizer: tokenizer,    // O tokenizer já instanciado
             quantized: true,
             local_files_only: true
         });
 
-        console.log("🚀 Criando Pipeline de Classificação...");
-        
-        // Criamos o pipeline injetando o modelo e tokenizer prontos
-        classificador = await pipeline('text-classification', model, {
-            tokenizer: tokenizer
-        });
-
         console.log("✅ IA Carregada com sucesso!");
         
-        // Importa seu script de lógica
         const modulo = await import(`${BASE_URL}processador.js`);
         processarLinhasComClassificador = modulo.processarLinhasComClassificador;
     }
     return classificador;
 };
 
-/**
- * Escutador do Worker
- */
 self.onmessage = async (e) => {
     const { tipo, texto } = e.data;
     try {
         if (tipo === 'PRELOAD' || tipo === 'PROCESSAR') {
             await carregarIA();
-            
-            if (tipo === 'PRELOAD') {
-                self.postMessage({ tipo: 'PRONTO' });
-            }
-            
+            if (tipo === 'PRELOAD') self.postMessage({ tipo: 'PRONTO' });
             if (tipo === 'PROCESSAR' && texto) {
-                if (typeof processarLinhasComClassificador === 'function') {
-                    const dados = await processarLinhasComClassificador(texto.split('\n'), classificador);
-                    self.postMessage({ tipo: 'RESULTADO', dados });
-                } else {
-                    throw new Error("Lógica de processamento não encontrada.");
-                }
+                const dados = await processarLinhasComClassificador(texto.split('\n'), classificador);
+                self.postMessage({ tipo: 'RESULTADO', dados });
             }
         }
     } catch (err) {
-        console.error("❌ Erro Master no Worker:", err);
+        console.error("❌ Erro no Worker:", err);
         self.postMessage({ tipo: 'ERRO', mensagem: err.message });
     }
 };
