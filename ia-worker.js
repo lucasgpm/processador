@@ -37,26 +37,29 @@ async function reconstruirModelo() {
  */
 const carregarIA = async () => {
     if (!session) {
+        // Configurações globais de performance
         self.ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/';
-        // Habilita otimizações de SIMD e Proxy
-        self.ort.env.wasm.numThreads = navigator.hardwareConcurrency || 4; 
+        self.ort.env.wasm.numThreads = Math.min(navigator.hardwareConcurrency || 4, 8); 
 
         const modelBuffer = await reconstruirModelo();
         
-        console.log("🚀 Iniciando sessão ONNX...");
+        console.log("🚀 Iniciando sessão com DistilBERT Quantizado...");
         
-        // Tenta WebGPU primeiro, se falhar cai para WASM
         try {
+            // TENTATIVA 1: WebGPU (Placa de vídeo - Ultra Rápido)
             session = await self.ort.InferenceSession.create(modelBuffer, {
-                executionProviders: ['webgpu', 'wasm'], 
-                graphOptimizationLevel: 'all' // Otimiza o grafo do modelo
+                executionProviders: ['webgpu'],
+                graphOptimizationLevel: 'all'
             });
-            console.log("✅ Motor ONNX pronto com WebGPU!");
+            console.log("⚡ WebGPU Ativado!");
         } catch (e) {
-            console.warn("WebGPU falhou, usando WASM lento...", e);
+            console.warn("⚠️ WebGPU não disponível, tentando WASM com SIMD...");
+            // TENTATIVA 2: WASM (CPU - Rápido)
             session = await self.ort.InferenceSession.create(modelBuffer, {
-                executionProviders: ['wasm']
+                executionProviders: ['wasm'],
+                graphOptimizationLevel: 'all'
             });
+            console.log("🐢 Rodando via CPU (WASM).");
         }
     }
 };
