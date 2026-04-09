@@ -3,9 +3,12 @@ import { pipeline, env, AutoTokenizer } from 'https://cdn.jsdelivr.net/npm/@xeno
 // DEFINA A URL BASE EXPLICITAMENTE
 const BASE_URL = 'https://lucasgpm.github.io/processador/';
 
-env.allowLocalModels = true;
-env.allowRemoteModels = false;
-env.localModelPath = BASE_URL; // Aponta para o GitHub, não para o local
+env.allowRemoteModels = true; 
+env.allowLocalModels = false;
+
+// ISSO AQUI é o que impede ele de ir no Hugging Face:
+env.remoteHost = BASE_URL; 
+env.remoteFileName = 'config'; // Padrão, mas garante a busca no seu host
 
 let classificador;
 let processarLinhasComClassificador;
@@ -37,9 +40,8 @@ const carregarIA = async () => {
     if (!classificador) {
         const modelBuffer = await reconstruirCerebroIA();
 
-        console.log("🔄 Inicializando Tokenizer e Pipeline...");
-
-        // USAR URL ABSOLUTA PARA O TOKENIZER
+        // Quando você chama isso, a lib faz: remoteHost + "tokenizer.json"
+        // Ou seja: https://lucasgpm.github.io/processador/tokenizer.json
         const tokenizer = await AutoTokenizer.from_pretrained(BASE_URL);
 
         classificador = await pipeline('text-classification', 'meu-modelo', {
