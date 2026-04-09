@@ -2,12 +2,13 @@ import {
     pipeline, 
     env, 
     AutoTokenizer, 
-    AutoConfig 
+    AutoConfig,
+    AutoModelForSequenceClassification 
 } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.1';
 
 const BASE_URL = 'https://lucasgpm.github.io/processador/';
 
-// Bloqueio de rede automático da lib
+// Travas de segurança contra acessos externos
 env.allowRemoteModels = false;
 env.allowLocalModels = true; 
 
@@ -37,11 +38,10 @@ async function reconstruirCerebroIA() {
 
 const carregarIA = async () => {
     if (!classificador) {
-        // 1. Pega o binário do modelo
         const modelBuffer = await reconstruirCerebroIA();
         const modeloPath = `${BASE_URL}meu-modelo/`;
 
-        console.log("📂 Carregando arquivos de configuração...");
+        console.log("📂 Carregando configurações...");
         const [configRes, tokenizerRes, tokenizerConfigRes] = await Promise.all([
             fetch(`${modeloPath}config.json`),
             fetch(`${modeloPath}tokenizer.json`),
@@ -52,24 +52,26 @@ const carregarIA = async () => {
         const tokenizerJSON = await tokenizerRes.json();
         const tokenizerConfigJSON = await tokenizerConfigRes.json();
 
-        // 2. Criamos a configuração e o tokenizer manualmente
+        console.log("🔄 Preparando componentes...");
         const config = new AutoConfig(configJSON);
         const tokenizer = new AutoTokenizer(tokenizerConfigJSON, tokenizerJSON);
         
-        console.log("🔄 Montando Pipeline de forma direta...");
-        
         /**
-         * AQUI ESTÁ A MUDANÇA CRÍTICA:
-         * Em vez de chamar Model.from_pretrained, passamos o buffer diretamente para o pipeline.
-         * Para o pipeline aceitar o buffer sem tentar dar fetch, passamos 'null' ou um nome falso
-         * no primeiro parâmetro e injetamos o modelo via opções.
+         * PASSO CRÍTICO: Carregamos o modelo usando a classe de Sequence Classification
+         * passando o buffer diretamente. Isso evita o erro de "null" ou "No model specified".
          */
-        classificador = await pipeline('text-classification', null, {
-            model_data: modelBuffer, // O binário do ONNX
-            config: config,          // O objeto de configuração
-            tokenizer: tokenizer,    // O tokenizer já instanciado
+        const model = await AutoModelForSequenceClassification.from_pretrained('meu-modelo-local', {
+            model_data: modelBuffer,
+            config: config,
             quantized: true,
             local_files_only: true
+        });
+
+        console.log("🚀 Inicializando Pipeline com modelo injetado...");
+        
+        // Agora o pipeline recebe o objeto 'model' já instanciado em vez de uma string
+        classificador = await pipeline('text-classification', model, {
+            tokenizer: tokenizer
         });
 
         console.log("✅ IA Carregada com sucesso!");
