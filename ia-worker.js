@@ -1,4 +1,8 @@
-import { AutoTokenizer } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers';
+importScripts('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2');
+
+// Agora o 'transformers' fica disponível no escopo global do Worker
+// Vamos extrair o AutoTokenizer dele
+const { AutoTokenizer } = self.Transformers;
 
 let tokenizer;
 
