@@ -1,3 +1,5 @@
+ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/';
+
 const BASE_URL = 'https://lucasgpm.github.io/processador/';
 
 let session;
