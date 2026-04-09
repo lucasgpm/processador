@@ -1,38 +1,32 @@
-// 1. Mudamos para a versão Bundle que é mais amigável com Workers
-importScripts('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js');
-
-// 2. Variáveis globais
 let tokenizer;
 let session;
 let carregando = false;
 const BASE_URL = 'https://lucasgpm.github.io/processador/';
 
 async function configurarTokenizer() {
-    // CAÇADOR DE LIB: Tenta todas as formas possíveis
-    let lib = self.transformers || self.Transformers || (self.Xenova && self.Xenova.transformers);
-
-    // Se ainda assim não achar, vamos procurar dentro do objeto 'Xenova' se ele existir solto
-    if (!lib && self.Xenova) lib = self.Xenova;
+    // Agora que injetamos via Firebase, o objeto 'transformers' deve existir
+    const lib = self.transformers || self.Xenova;
 
     if (!lib) {
-        console.log("Variáveis no self no momento do erro:", Object.keys(self));
-        // Se a lib realmente não carregar, vamos tentar uma última cartada: injetar o objeto
-        throw new Error("Biblioteca Transformers não detectada. Tente limpar o cache.");
+        console.log("Objetos disponíveis no self:", Object.keys(self));
+        throw new Error("Biblioteca Transformers não encontrada no escopo global.");
     }
 
     if (!tokenizer) {
         console.log("📝 Carregando Tokenizer do GitHub...");
         
-        // CONFIGURAÇÃO DE AMBIENTE: Isso aqui é vital
-        lib.env.allowLocalModels = true; 
-        lib.env.allowRemoteModels = false; // Não deixa ele ir no Hugging Face (evita erro 400)
-        lib.env.localModelPath = BASE_URL; 
+        // Bloqueia tentativas de ir no Hugging Face
+        lib.env.allowLocalModels = true;
+        lib.env.allowRemoteModels = false;
+        lib.env.localModelPath = BASE_URL;
 
-        // Força o link correto para os arquivos vocab.txt e jsons
+        // Tenta carregar os 4 arquivos (json e txt) da sua BASE_URL
         tokenizer = await lib.AutoTokenizer.from_pretrained(BASE_URL);
-        console.log("✅ Tokenizer carregado com sucesso!");
+        console.log("✅ Tokenizer carregado!");
     }
 }
+
+// ... restante do código (reconstruirModelo, carregarIA, etc) ...
 
 // 4. Reconstrói o modelo a partir dos chunks
 async function reconstruirModelo() {
