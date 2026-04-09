@@ -1,41 +1,46 @@
-// Removemos o import antigo e usamos o importScripts que é mais estável para o ORT em Workers
+// 1. Carrega o ONNX (Global 'ort' fica disponível)
 importScripts('https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js');
+
+// 2. Carrega sua lógica de processamento
+// Importante: No seu processador.js, a função NÃO deve ter 'export'. 
+// Ela deve ser declarada apenas como: async function processarLinhasComClassificador(...)
+importScripts('https://lucasgpm.github.io/processador/processador.js');
 
 const BASE_URL = 'https://lucasgpm.github.io/processador/';
 let session;
-let processarLinhasComClassificador;
+let processarLinhasComClassificador = null;
 
-// O objeto 'ort' agora deve estar disponível globalmente
-
-// --- FUNÇÃO DE TOKENIZAÇÃO MANUAL (Simplificada para DistilBERT) ---
-// O DistilBERT usa WordPiece. Para não complicar, vamos carregar o vocab.json
-async function carregarTokenizer() {
-    const res = await fetch(`${BASE_URL}meu-modelo/tokenizer.json`);
-    const data = await res.json();
-    return data; 
-}
-
-// --- RECONSTRUÇÃO DO MODELO (Igual à sua, pois funciona bem) ---
+/**
+ * Reconstrói o modelo a partir dos chunks binários
+ */
 async function reconstruirModelo() {
     console.log("🧠 Reconstruindo modelo para o ONNX Runtime...");
     const path = `${BASE_URL}onnx/chunks/`; 
     const partes = ['model_part_0.bin', 'model_part_1.bin', 'model_part_2.bin'];
     
-    const buffers = await Promise.all(partes.map(async (nome) => {
-        const res = await fetch(path + nome);
-        return res.arrayBuffer();
-    }));
+    try {
+        const buffers = await Promise.all(partes.map(async (nome) => {
+            const res = await fetch(path + nome);
+            if (!res.ok) throw new Error(`Falha ao carregar ${nome}`);
+            return res.arrayBuffer();
+        }));
 
-    const totalLength = buffers.reduce((acc, b) => acc + b.byteLength, 0);
-    const combined = new Uint8Array(totalLength);
-    let offset = 0;
-    for (const b of buffers) {
-        combined.set(new Uint8Array(b), offset);
-        offset += b.byteLength;
+        const totalLength = buffers.reduce((acc, b) => acc + b.byteLength, 0);
+        const combined = new Uint8Array(totalLength);
+        let offset = 0;
+        for (const b of buffers) {
+            combined.set(new Uint8Array(b), offset);
+            offset += b.byteLength;
+        }
+        return combined.buffer; // Retorna o ArrayBuffer puro
+    } catch (error) {
+        throw new Error("Erro na reconstrução do modelo: " + error.message);
     }
-    return combined;
 }
 
+/**
+ * Inicializa a IA e importa o processador lógico
+ */
 const carregarIA = async () => {
     if (!session) {
         const modelBuffer = await reconstruirModelo();
@@ -46,13 +51,14 @@ const carregarIA = async () => {
         });
 
         console.log("✅ Motor ONNX pronto!");
-
-        // Importamos sua lógica (ajustaremos ela abaixo)
-        const modulo = await import(`${BASE_URL}processador.js`);
-        processarLinhasComClassificador = modulo.processarLinhasComClassificador;
+        // Não precisamos mais do 'await import' aqui, 
+        // pois a função já foi carregada pelo importScripts no topo.
     }
 };
 
+/**
+ * Listener de mensagens
+ */
 self.onmessage = async (e) => {
     const { tipo, texto } = e.data;
     try {
@@ -60,7 +66,7 @@ self.onmessage = async (e) => {
             await carregarIA();
             if (tipo === 'PRELOAD') self.postMessage({ tipo: 'PRONTO' });
             if (tipo === 'PROCESSAR' && texto) {
-                // Aqui passamos a 'session' em vez do 'classificador'
+                // Chama a função que agora está no escopo global do Worker
                 const dados = await processarLinhasComClassificador(texto.split('\n'), session);
                 self.postMessage({ tipo: 'RESULTADO', dados });
             }
