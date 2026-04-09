@@ -1,9 +1,3 @@
-// ia-worker.js no GitHub
-importScripts('https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js');
-
-// Para o processador.js, também use URL absoluta
-importScripts('https://lucasgpm.github.io/processador/processador.js');
-
 const BASE_URL = 'https://lucasgpm.github.io/processador/';
 
 let session;
