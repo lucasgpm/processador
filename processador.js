@@ -39,16 +39,18 @@ async function processarLinhasComClassificador(linhas, session, vocab) {
             const bigIntIds = finalIds.map(id => BigInt(id));
 
             // 4. Cria os Tensores para o ONNX
-            const tensorIds = new ort.Tensor('int64', BigUint64Array.from(bigIntIds), [1, maxLength]);
-            const tensorMask = new ort.Tensor('int64', BigUint64Array.from(attentionMask), [1, maxLength]);
-
+            const tensorIds = new ort.Tensor('int64', new BigInt64Array(bigIntIds), [1, maxLength]);
+            const tensorMask = new ort.Tensor('int64', new BigInt64Array(attentionMask), [1, maxLength]);
+            
             // Roda a IA
             const output = await session.run({
                 input_ids: tensorIds,
                 attention_mask: tensorMask
             });
-
-            resultados.push({ texto: linha, raw: output });
+            
+            // Pegando o resultado (geralmente está em logits ou output_0)
+            const logits = output.logits || output[Object.keys(output)[0]]; 
+            resultados.push({ texto: linha, raw: logits.data });
 
         } catch (e) {
             console.warn(`Erro na linha: ${linha}`, e);
