@@ -1,37 +1,32 @@
-importScripts('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js');
-// Nota: O ort (onnxruntime) já é injetado pelo seu script de montagem do Worker
+// 1. Carrega a biblioteca de um CDN alternativo que registra melhor o objeto global
+importScripts('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2');
 
-// 2. Variáveis globais e Configurações
+// 2. Variáveis globais
 let tokenizer;
 let session;
 let carregando = false;
 const BASE_URL = 'https://lucasgpm.github.io/processador/';
 
-// Troque o topo do seu ia-worker.js por isso:
-
 async function configurarTokenizer() {
-    // TRUQUE: No Worker, o Xenova costuma se esconder dentro do objeto global 'transformers' (minúsculo)
-    // Se não estiver lá, vamos tentar capturar o que o script injetou.
-    const lib = self.transformers || self.Transformers || self.Xenova;
+    // Tentamos todas as variações de nome que o Xenova assume em Workers
+    const lib = self.transformers || self.Transformers || (self.Xenova && self.Xenova.transformers);
     
     if (!lib) {
-        // Se ainda não achou, vamos tentar acessar os membros diretamente do self
-        // Algumas versões injetam 'AutoTokenizer' direto no escopo global do worker
-        if (self.AutoTokenizer) {
-            console.log("🚀 AutoTokenizer encontrado diretamente no self!");
-            if (!tokenizer) {
-                tokenizer = await self.AutoTokenizer.from_pretrained(BASE_URL);
-            }
-            return;
-        }
+        console.log("Variáveis disponíveis no self:", Object.keys(self));
         throw new Error("Biblioteca Transformers não detectada. Verifique o importScripts.");
     }
 
     if (!tokenizer) {
-        console.log("📝 Carregando Tokenizer do GitHub...");
+        console.log("📝 Lendo arquivos do Tokenizer (vocab, special_tokens, json)...");
+        
+        // Configurações para ler do seu GitHub
         lib.env.allowLocalModels = false;
-        // Usamos o objeto lib que encontramos
+        lib.env.allowRemoteModels = true;
+        
+        // Aqui ele vai buscar automaticamente: 
+        // tokenizer.json, tokenizer_config.json, vocab.txt e special_tokens_map.json
         tokenizer = await lib.AutoTokenizer.from_pretrained(BASE_URL);
+        console.log("✅ Tokenizer configurado com sucesso!");
     }
 }
 
