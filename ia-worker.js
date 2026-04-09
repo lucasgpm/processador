@@ -2,9 +2,10 @@ import { pipeline, env, AutoTokenizer } from 'https://cdn.jsdelivr.net/npm/@xeno
 
 const BASE_URL = 'https://lucasgpm.github.io/processador/';
 
-// Desligamos TUDO que for download automático da biblioteca
-env.allowRemoteModels = false;
-env.allowLocalModels = false;
+// CONFIGURAÇÃO DE SEGURANÇA:
+// Deixamos 'local' como true para ela aceitar os buffers que vamos injetar.
+env.allowRemoteModels = false; 
+env.allowLocalModels = true; 
 
 let classificador;
 let processarLinhasComClassificador;
@@ -32,13 +33,11 @@ async function reconstruirCerebroIA() {
 
 const carregarIA = async () => {
     if (!classificador) {
-        // 1. Baixamos o binário (cérebro)
         const modelBuffer = await reconstruirCerebroIA();
 
         console.log("📂 Baixando arquivos de configuração manualmente...");
         const modeloPath = `${BASE_URL}meu-modelo/`;
 
-        // 2. BAIXAMOS OS JSONS NÓS MESMOS (Sem passar pela lib)
         const [configRes, tokenizerRes, tokenizerConfigRes] = await Promise.all([
             fetch(`${modeloPath}config.json`),
             fetch(`${modeloPath}tokenizer.json`),
@@ -54,13 +53,11 @@ const carregarIA = async () => {
         const tokenizerConfigData = await tokenizerConfigRes.json();
 
         console.log("🔄 Inicializando Tokenizer com dados locais...");
-        
-        // 3. Criamos o tokenizer passando os dados já baixados
         const tokenizer = new AutoTokenizer(tokenizerConfigData, tokenizerData);
 
         console.log("🚀 Montando Pipeline final...");
 
-        // 4. Montamos o pipeline injetando TUDO manualmente
+        // Com allowLocalModels = true, ela aceitará o modelBuffer sem reclamar
         classificador = await pipeline('text-classification', modelBuffer, {
             tokenizer: tokenizer,
             config: configData,
@@ -82,8 +79,12 @@ self.onmessage = async (e) => {
             await carregarIA();
             if (tipo === 'PRELOAD') self.postMessage({ tipo: 'PRONTO' });
             if (tipo === 'PROCESSAR' && texto) {
-                const dados = await processarLinhasComClassificador(texto.split('\n'), classificador);
-                self.postMessage({ tipo: 'RESULTADO', dados });
+                if (typeof processarLinhasComClassificador === 'function') {
+                    const dados = await processarLinhasComClassificador(texto.split('\n'), classificador);
+                    self.postMessage({ tipo: 'RESULTADO', dados });
+                } else {
+                    throw new Error("Função de processamento não encontrada.");
+                }
             }
         }
     } catch (err) {
