@@ -37,16 +37,27 @@ async function reconstruirModelo() {
  */
 const carregarIA = async () => {
     if (!session) {
+        self.ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/';
+        // Habilita otimizações de SIMD e Proxy
+        self.ort.env.wasm.numThreads = navigator.hardwareConcurrency || 4; 
+
         const modelBuffer = await reconstruirModelo();
         
         console.log("🚀 Iniciando sessão ONNX...");
-        session = await self.ort.InferenceSession.create(modelBuffer, {
-            executionProviders: ['wasm']
-        });
-
-        console.log("✅ Motor ONNX pronto!");
-        // Não precisamos mais do 'await import' aqui, 
-        // pois a função já foi carregada pelo importScripts no topo.
+        
+        // Tenta WebGPU primeiro, se falhar cai para WASM
+        try {
+            session = await self.ort.InferenceSession.create(modelBuffer, {
+                executionProviders: ['webgpu', 'wasm'], 
+                graphOptimizationLevel: 'all' // Otimiza o grafo do modelo
+            });
+            console.log("✅ Motor ONNX pronto com WebGPU!");
+        } catch (e) {
+            console.warn("WebGPU falhou, usando WASM lento...", e);
+            session = await self.ort.InferenceSession.create(modelBuffer, {
+                executionProviders: ['wasm']
+            });
+        }
     }
 };
 
