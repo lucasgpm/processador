@@ -1,3 +1,4 @@
+// 1. Mudamos para a versão Bundle que é mais amigável com Workers
 importScripts('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js');
 
 // 2. Variáveis globais
@@ -7,31 +8,29 @@ let carregando = false;
 const BASE_URL = 'https://lucasgpm.github.io/processador/';
 
 async function configurarTokenizer() {
-    // 1. Tenta pegar do objeto global padrão
-    let lib = self.transformers || self.Transformers;
+    // CAÇADOR DE LIB: Tenta todas as formas possíveis
+    let lib = self.transformers || self.Transformers || (self.Xenova && self.Xenova.transformers);
 
-    // 2. Se não achou, tenta extrair do que o script do CDN injetou
-    if (!lib && self.Xenova) lib = self.Xenova.transformers;
+    // Se ainda assim não achar, vamos procurar dentro do objeto 'Xenova' se ele existir solto
+    if (!lib && self.Xenova) lib = self.Xenova;
 
     if (!lib) {
-        console.error("Scripts carregados no worker:", Object.keys(self));
-        throw new Error("Biblioteca Transformers não detectada. Tente limpar o cache do navegador.");
+        console.log("Variáveis no self no momento do erro:", Object.keys(self));
+        // Se a lib realmente não carregar, vamos tentar uma última cartada: injetar o objeto
+        throw new Error("Biblioteca Transformers não detectada. Tente limpar o cache.");
     }
 
     if (!tokenizer) {
         console.log("📝 Carregando Tokenizer do GitHub...");
         
-        // Desativa busca automática no Hugging Face para evitar erro 400
+        // CONFIGURAÇÃO DE AMBIENTE: Isso aqui é vital
         lib.env.allowLocalModels = true; 
-        lib.env.allowRemoteModels = false;
+        lib.env.allowRemoteModels = false; // Não deixa ele ir no Hugging Face (evita erro 400)
         lib.env.localModelPath = BASE_URL; 
 
-        // IMPORTANTE: Isso diz à lib para procurar vocab.txt e os jsons na raiz da BASE_URL
-        tokenizer = await lib.AutoTokenizer.from_pretrained(BASE_URL, {
-            base_url: BASE_URL
-        });
-        
-        console.log("✅ Tokenizer carregado!");
+        // Força o link correto para os arquivos vocab.txt e jsons
+        tokenizer = await lib.AutoTokenizer.from_pretrained(BASE_URL);
+        console.log("✅ Tokenizer carregado com sucesso!");
     }
 }
 
