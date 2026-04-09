@@ -36,26 +36,29 @@ async function reconstruirCerebroIA() {
 
 const carregarIA = async () => {
     if (!classificador) {
+        // 1. Reconstrói o arquivo .bin
         const modelBuffer = await reconstruirCerebroIA();
 
         console.log("🔄 Inicializando Tokenizer e Configurações...");
         
-        // 1. Carregamos o Tokenizer normalmente
-        const tokenizer = await AutoTokenizer.from_pretrained('meu-modelo', {
-            remote_only: true
-        });
+        // Caminho para a pasta onde estão os JSONs
+        const modeloPath = `${BASE_URL}meu-modelo/`;
 
-        // 2. BUSCA O ARQUIVO DE CONFIGURAÇÃO MANUALMENTE (Isso resolve o erro de 'null')
-        const configRes = await fetch(`${BASE_URL}meu-modelo/config.json`);
+        // Carregamos o Tokenizer passando a URL da PASTA
+        // O erro t.replace rolou porque a lib se confundiu com os argumentos
+        const tokenizer = await AutoTokenizer.from_pretrained(modeloPath);
+
+        // Carregamos a config manualmente para garantir que o pipeline não se perca
+        const configRes = await fetch(`${modeloPath}config.json`);
         if (!configRes.ok) throw new Error("Não foi possível carregar o config.json");
         const configData = await configRes.json();
 
-        console.log("🔄 Montando Pipeline com Buffer e Config...");
+        console.log("🔄 Montando Pipeline com Buffer...");
 
-        // 3. Montamos o pipeline passando o buffer E a config carregada
+        // O SEGREDO: Passamos o buffer, e nas opções passamos o objeto config
         classificador = await pipeline('text-classification', modelBuffer, {
             tokenizer: tokenizer,
-            config: configData, // Passamos o objeto JSON aqui, não a string do caminho
+            config: configData,
             quantized: true
         });
 
