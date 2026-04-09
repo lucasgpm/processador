@@ -51,16 +51,24 @@ async function reconstruirModelo() {
 }
 
 // 3. Inicialização da IA
+// 3. Inicialização da IA
 const carregarIA = async () => {
     if (session && vocab) return;
     if (carregando) return;
     carregando = true;
 
     try {
-        // Redundância de performance dentro do Worker
         if (self.ort) {
-            self.ort.env.wasm.numThreads = navigator.hardwareConcurrency || 4;
-            self.ort.env.wasm.simd = true;
+            self.ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.1/dist/';
+            
+            if (!self.crossOriginIsolated) {
+                console.warn("⚠️ Modo isolado desativado. Rodando em Single-thread.");
+                self.ort.env.wasm.numThreads = 1;
+                self.ort.env.wasm.simd = false;
+            } else {
+                self.ort.env.wasm.numThreads = navigator.hardwareConcurrency || 4;
+                self.ort.env.wasm.simd = true;
+            }
         }
 
         const [modelBuffer] = await Promise.all([
@@ -71,7 +79,7 @@ const carregarIA = async () => {
         console.log("🚀 Iniciando Motor ONNX Turbo...");
         session = await self.ort.InferenceSession.create(modelBuffer, {
             executionProviders: ['wasm'],
-            graphOptimizationLevel: 'all', // Otimiza o grafo do modelo para ser mais rápido
+            graphOptimizationLevel: 'all',
             enableCpuMemAccessOptimizations: true
         });
 
