@@ -67,23 +67,25 @@ const carregarIA = async () => {
 
     carregando = true;
     try {
-        self.ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/';
+        // --- CONFIGURAÇÃO DE SEGURANÇA ---
+        self.ort.env.wasm.numThreads = 1; // Força 1 thread apenas
+        self.ort.env.wasm.simd = false;   // DESATIVA SIMD (Isso resolve o memory out of bounds)
+        self.ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.1/dist/';
         
-        // Carrega Modelo
         const modelBuffer = await reconstruirModelo();
-        console.log("🚀 Iniciando sessão ONNX (WebGPU/WASM)...");
+        console.log("🚀 Iniciando sessão ONNX (Modo Seguro)...");
         
+        // Vamos remover o 'webgpu' por enquanto para garantir estabilidade
         session = await self.ort.InferenceSession.create(modelBuffer, {
-            executionProviders: ['webgpu', 'wasm'],
+            executionProviders: ['wasm'], // Apenas WASM puro para evitar erro de memória
             graphOptimizationLevel: 'all'
         });
 
-        // Carrega Tokenizer
         await configurarTokenizer();
         
-        console.log("✅ Motor e Tokenizer prontos para uso!");
+        console.log("✅ Motor e Tokenizer prontos!");
     } catch (e) {
-        console.error("❌ Falha crítica no carregamento:", e);
+        console.error("❌ Falha no carregamento:", e);
         self.postMessage({ tipo: 'ERRO', mensagem: e.message });
     } finally {
         carregando = false;
