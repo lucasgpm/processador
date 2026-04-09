@@ -48,7 +48,7 @@ const carregarIA = async () => {
             remote_only: true
         });
 
-        classificador = await pipeline('text-classification', './', {
+        classificador = await pipeline('text-classification', '', {
             model_file_name: modelBuffer, 
             tokenizer: tokenizer,
             quantized: true
