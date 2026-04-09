@@ -11,52 +11,54 @@ function limparChave(chaveBruta) {
 async function processarLinhasComClassificador(linhas, session, vocab) {
     const limpas = linhas.map(l => l.trim()).filter(l => l.length > 5);
     const resultados = [];
+    const maxLength = 128;
 
-    console.time("⏱️ Processamento Total");
+    console.time("🚀 Performance Máxima");
 
     for (const linha of limpas) {
         try {
-            // --- TOKENIZAÇÃO MANUAL SIMPLIFICADA ---
-            // Se você não tem uma lib de tokenização, fazemos o básico:
-            // 1. Converte para minúsculo e separa por palavras (ou usa o vocab)
+            // Tokenização manual ultra rápida
             const tokens = linha.toLowerCase().split(/\s+/);
-            
-            // 2. Converte palavras em IDs usando o vocab que baixamos
-            // Adicionamos o ID 101 (CLS) no início e 102 (SEP) no fim (padrão BERT)
-            const inputIds = [101]; 
+            const inputIds = new BigUint64Array(maxLength).fill(0n);
+            const attentionMask = new BigUint64Array(maxLength).fill(0n);
+
+            inputIds[0] = 101n; // [CLS]
+            let pos = 1;
             for (const token of tokens) {
-                const id = vocab[token] || vocab['[UNK]'] || 100; // 100 é o padrão para desconhecido
-                inputIds.push(id);
+                if (pos >= maxLength - 1) break;
+                const id = vocab[token] || vocab['[UNK]'] || 100;
+                inputIds[pos] = BigInt(id);
+                attentionMask[pos] = 1n;
+                pos++;
             }
-            inputIds.push(102);
+            inputIds[pos] = 102n; // [SEP]
+            attentionMask[0] = 1n; // CLS mask
+            attentionMask[pos] = 1n; // SEP mask
 
-            // 3. Truncamento e Padding para 128 tokens
-            const maxLength = 128;
-            const finalIds = inputIds.slice(0, maxLength);
-            while (finalIds.length < maxLength) finalIds.push(0); // Padding com 0
+            // Criação de Tensores sem overhead
+            const tensorIds = new ort.Tensor('int64', inputIds, [1, maxLength]);
+            const tensorMask = new ort.Tensor('int64', attentionMask, [1, maxLength]);
 
-            const attentionMask = finalIds.map(id => id > 0 ? 1n : 0n);
-            const bigIntIds = finalIds.map(id => BigInt(id));
-
-            // 4. Cria os Tensores para o ONNX
-            const tensorIds = new ort.Tensor('int64', new BigInt64Array(bigIntIds), [1, maxLength]);
-            const tensorMask = new ort.Tensor('int64', new BigInt64Array(attentionMask), [1, maxLength]);
-            
-            // Roda a IA
+            // Execução da IA
             const output = await session.run({
                 input_ids: tensorIds,
                 attention_mask: tensorMask
             });
+
+            // Extração rápida (Logits)
+            const logits = output.logits || output[Object.keys(output)[0]];
             
-            // Pegando o resultado (geralmente está em logits ou output_0)
-            const logits = output.logits || output[Object.keys(output)[0]]; 
-            resultados.push({ texto: linha, raw: logits.data });
+            // Enviamos como Array normal para o Worker não travar no postMessage
+            resultados.push({ 
+                texto: linha, 
+                score: Array.from(logits.data) 
+            });
 
         } catch (e) {
             console.warn(`Erro na linha: ${linha}`, e);
         }
     }
 
-    console.timeEnd("⏱️ Processamento Total");
+    console.timeEnd("🚀 Performance Máxima");
     return resultados;
 }
