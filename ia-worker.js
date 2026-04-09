@@ -61,7 +61,9 @@ const carregarIA = async () => {
         classificador = await pipeline('text-classification', modelBuffer, {
             tokenizer: tokenizer,
             config: configData,
-            quantized: true
+            quantized: true,
+            // ESSA LINHA ABAIXO É O TRUQUE:
+            model_file_name: 'model_quantized.onnx' 
         });
 
         console.log("✅ IA Carregada com sucesso!");
