@@ -1,20 +1,24 @@
 import { pipeline, env, AutoTokenizer } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.1';
 
+// DEFINA A URL BASE EXPLICITAMENTE
+const BASE_URL = 'https://lucasgpm.github.io/processador/';
+
 env.allowLocalModels = true;
 env.allowRemoteModels = false;
-env.localModelPath = './';
+env.localModelPath = BASE_URL; // Aponta para o GitHub, não para o local
 
 let classificador;
 let processarLinhasComClassificador;
 
 async function reconstruirCerebroIA() {
     console.log("🧠 Baixando pedaços do modelo...");
-    // Caminho relativo à pasta onnx/chunks conforme sua foto
-    const path = './onnx/chunks/'; 
+    
+    // USAR URL ABSOLUTA AQUI
+    const path = `${BASE_URL}onnx/chunks/`; 
     const partes = ['model_part_0.bin', 'model_part_1.bin', 'model_part_2.bin'];
     
     const buffers = await Promise.all(partes.map(async (nome) => {
-        const res = await fetch(path + nome);
+        const res = await fetch(path + nome); // Fetch agora tem a URL completa
         if (!res.ok) throw new Error(`Erro ao baixar parte: ${nome}`);
         return res.arrayBuffer();
     }));
@@ -31,16 +35,13 @@ async function reconstruirCerebroIA() {
 
 const carregarIA = async () => {
     if (!classificador) {
-        // 1. Reconstrói o arquivo .bin
         const modelBuffer = await reconstruirCerebroIA();
 
         console.log("🔄 Inicializando Tokenizer e Pipeline...");
 
-        // 2. Carrega o Tokenizer. 
-        // Como env.localModelPath é './', ele vai buscar config.json e tokenizer.json na raiz do seu repo
-        const tokenizer = await AutoTokenizer.from_pretrained('./');
+        // USAR URL ABSOLUTA PARA O TOKENIZER
+        const tokenizer = await AutoTokenizer.from_pretrained(BASE_URL);
 
-        // 3. Monta o Pipeline
         classificador = await pipeline('text-classification', 'meu-modelo', {
             model_file_name: modelBuffer, 
             tokenizer: tokenizer,
@@ -49,8 +50,8 @@ const carregarIA = async () => {
 
         console.log("🚀 IA Carregada com sucesso!");
 
-        // 4. Import do seu processador (também relativo)
-        const modulo = await import('./processador.js');
+        // IMPORT DO PROCESSADOR COM URL ABSOLUTA
+        const modulo = await import(`${BASE_URL}processador.js`);
         processarLinhasComClassificador = modulo.processarLinhasComClassificador;
     }
     return classificador;
