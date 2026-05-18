@@ -1,20 +1,69 @@
-function limparChaveCaca(texto) {
-    return texto
+// MANTIDO: Mesmo nome da função utilitária original
+function limparChave(chaveBruta) {
+    return chaveBruta
         .replace(/\(.*?\)/g, '')           
         .replace(/->|=>|^\d+[\s.]*/g, '')  
         .replace(/["'«»]/g, '')            
+        .replace(/[-—_]/g, ' ') // Mantido padrão de trocar traço por espaço           
         .trim();
 }
 
-async function processarLinhasCacaPalavras(linhas, session, vocab) {
+// MANTIDO: Mesmo nome da função do tokenizador
+function tokenizeWordPiece(text, vocab) {
+    const words = text.toLowerCase()
+        .replace(/([.,!?])/g, ' $1 ')
+        .trim()
+        .split(/\s+/);
+    
+    const resultIds = [];
+    for (let word of words) {
+        if (vocab[word]) {
+            resultIds.push(BigInt(vocab[word]));
+            continue;
+        }
+
+        let start = 0;
+        let found = false;
+        while (start < word.length) {
+            let end = word.length;
+            let curSubstrId = null;
+            while (start < end) {
+                let substr = (start === 0) ? word.substring(start, end) : "##" + word.substring(start, end);
+                if (vocab[substr]) {
+                    curSubstrId = BigInt(vocab[substr]);
+                    break;
+                }
+                end--;
+            }
+            if (curSubstrId === null) {
+                resultIds.push(BigInt(vocab['[UNK]'] || 100));
+                break;
+            }
+            resultIds.push(curSubstrId);
+            start = end;
+        }
+    }
+    return resultIds;
+}
+
+// MANTIDO: Mesmo nome da função softmax
+function softmax(logits) {
+    const maxLogit = Math.max(...logits);
+    const scores = logits.map(l => Math.exp(l - maxLogit));
+    const sum = scores.reduce((a, b) => a + b, 0);
+    return scores.map(s => s / sum);
+}
+
+// MANTIDO: Mesmo nome da função principal chamada pelo Worker original
+async function processarLinhasComClassificador(linhas, session, vocab) {
     const resultados = [];
-    const BATCH_SIZE = 8; 
+    const BATCH_SIZE = 4; // Lotes menores dão mais precisão para palavras isoladas
     const TETO_MAX_LENGTH = 128;
 
-    // Pega qualquer linha que tenha pelo menos 2 caracteres de texto útil
+    // Pré-filtro físico para Caça-Palavras (Garante que a linha tenha tamanho viável e não seja uma frase longa)
     const linhasValidas = linhas
         .map(l => l.trim())
-        .filter(t => t.length >= 2);
+        .filter(t => t.length >= 3 && t.length <= 16 && !t.includes(" ") && !t.includes("."));
 
     const totalBatches = Math.ceil(linhasValidas.length / BATCH_SIZE);
 
@@ -58,14 +107,27 @@ async function processarLinhasCacaPalavras(linhas, session, vocab) {
                 const inicio = index * numLabels;
                 const logits = Array.from(outputData.slice(inicio, inicio + numLabels));
                 const scores = softmax(logits);
-                const scoreConfianca = Math.max(...scores);
 
-                // Se a IA confia no texto, limpamos e adicionamos direto no array
-                if (scoreConfianca > 0.3) {
-                    const palavraBruta = limparChaveCaca(t);
-                    if (palavraBruta.length > 0) {
-                        resultados.push(palavraBruta); // Retorna apenas a string direta!
+                // --- Cálculo de Entropia Semântica ---
+                const maxScore = Math.max(...scores);
+                const minScore = Math.min(...scores);
+                const margemCerteza = maxScore - minScore;
+
+                // Executa a limpeza idêntica
+                const chaveLimpa = limparChave(t);
+                const palavraUpper = chaveLimpa.toUpperCase();
+
+                // Se a IA tiver convicção sobre a palavra (evita títulos/lixo estrutural)
+                if (margemCerteza > 0.20) {
+                    const tokens = tokensDoBatch[index];
+                    const contemDesconhecido = tokens.includes(100n); // Filtra lixo de caracteres / código [UNK]
+
+                    if (!contemDesconhecido && /^[A-ZÁ-Ý]+$/i.test(palavraUpper)) {
+                        // AGORA: Adiciona apenas a String direta no array resultados, atendendo ao Caça-Palavras
+                        resultados.push(palavraUpper);
                     }
+                } else {
+                    console.log(`🗑️ [IA FILTRO] Removido por incerteza semântica (Título/Lixo): "${t}" (Certeza: ${margemCerteza.toFixed(4)})`);
                 }
             });
 
@@ -73,8 +135,10 @@ async function processarLinhasCacaPalavras(linhas, session, vocab) {
             self.postMessage({ tipo: 'PROGRESSO', valor: Math.min(progresso, 100) });
 
         } catch (e) {
-            console.error("Erro no lote:", e);
+            console.error("Erro no processamento do lote:", e);
         }
     }
+
+    console.log("🎯 [IA SUCESSO] Vetor limpo para Caça-Palavras gerado:", resultados);
     return resultados;
 }
