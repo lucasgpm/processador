@@ -59,9 +59,8 @@ async function processarLinhasComClassificador(linhas, session, vocab) {
     const resultados = [];
     
     // 1. Pré-filtro universal por estrutura física
-    // Mantém linhas que contenham apenas uma palavra (sem espaços ou pontos internos)
-    // O limite de caracteres considera que ideogramas (como chinês/japonês) formam palavras com menos caracteres (ex: 2)
-    const linhasCandidatas = lines = linhas
+    // CORRIGIDO: Removido o lixo de digitação "lines =" que causava o ReferenceError
+    const linhasCandidatas = linhas
         .map(l => l.trim())
         .filter(t => t.length >= 2 && t.length <= 16 && !t.includes(" ") && !t.includes("."));
 
@@ -78,13 +77,10 @@ async function processarLinhasComClassificador(linhas, session, vocab) {
         const contemDesconhecido = tokens.includes(100n);
 
         // 3. Validação Ortográfica Global (Unicode)
-        // \p{L} aceita QUALQUER letra de QUALQUER alfabeto do planeta (Árabe, Cirílico, Ideogramas, Kanji, etc.)
-        // a flag 'u' no final ativa o suporte completo a caracteres Unicode do JavaScript
         const ehPalavraValida = /^\p{L}+$/u.test(chaveLimpa);
 
         // Se a palavra existe no dicionário global e é um conjunto puro de letras/ideogramas, ela entra
         if (!contemDesconhecido && ehPalavraValida) {
-            // Converte para UpperCase apenas se o alfabeto suportar caixa alta (evita bugs em escritas asiáticas)
             resultados.push(chaveLimpa.toUpperCase());
         } else {
             console.log(`🗑️ [FILTRO] Linha descartada por não ser uma palavra válida globalmente: "${linha}"`);
