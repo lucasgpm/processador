@@ -4,11 +4,11 @@ function limparChave(chaveBruta) {
         .replace(/\(.*?\)/g, '')           
         .replace(/->|=>|^\d+[\s.]*/g, '')  
         .replace(/["'«»]/g, '')            
-        .replace(/[-—_]/g, ' ') // Mantido padrão de trocar traço por espaço           
+        .replace(/[-—_]/g, ' ')           
         .trim();
 }
 
-// MANTIDO: Mesmo nome da função do tokenizador
+// MANTIDO: Mesmo nome da função do tokenizador original
 function tokenizeWordPiece(text, vocab) {
     const words = text.toLowerCase()
         .replace(/([.,!?])/g, ' $1 ')
@@ -46,7 +46,7 @@ function tokenizeWordPiece(text, vocab) {
     return resultIds;
 }
 
-// MANTIDO: Mesmo nome da função softmax
+// MANTIDO: Mesmo nome da função softmax original
 function softmax(logits) {
     const maxLogit = Math.max(...logits);
     const scores = logits.map(l => Math.exp(l - maxLogit));
@@ -54,91 +54,52 @@ function softmax(logits) {
     return scores.map(s => s / sum);
 }
 
-// MANTIDO: Mesmo nome da função principal chamada pelo Worker original
+// MANTIDO: Nome idêntico para não quebrar a comunicação com o Worker original
 async function processarLinhasComClassificador(linhas, session, vocab) {
     const resultados = [];
-    const BATCH_SIZE = 4; // Lotes menores dão mais precisão para palavras isoladas
-    const TETO_MAX_LENGTH = 128;
-
-    // Pré-filtro físico para Caça-Palavras (Garante que a linha tenha tamanho viável e não seja uma frase longa)
-    const linhasValidas = linhas
+    
+    // 1. Pré-filtro universal por estrutura física
+    // Mantém linhas que contenham apenas uma palavra (sem espaços ou pontos internos)
+    // O limite de caracteres considera que ideogramas (como chinês/japonês) formam palavras com menos caracteres (ex: 2)
+    const linhasCandidatas = lines = linhas
         .map(l => l.trim())
-        .filter(t => t.length >= 3 && t.length <= 16 && !t.includes(" ") && !t.includes("."));
+        .filter(t => t.length >= 2 && t.length <= 16 && !t.includes(" ") && !t.includes("."));
 
-    const totalBatches = Math.ceil(linhasValidas.length / BATCH_SIZE);
+    const totalLinhas = linhasCandidatas.length;
 
-    for (let i = 0; i < linhasValidas.length; i += BATCH_SIZE) {
-        const batchAtual = linhasValidas.slice(i, i + BATCH_SIZE);
-        const atualBatchSize = batchAtual.length;
+    linhasCandidatas.forEach((linha, index) => {
+        const chaveLimpa = limparChave(linha);
+        
+        // 2. Validação por Vocabulário Multilíngue do BERT (104 idiomas nativos)
+        const palavraLower = chaveLimpa.toLowerCase();
+        const tokens = tokenizeWordPiece(palavraLower, vocab);
+        
+        // Se a palavra gera um token desconhecido [UNK] (ID 100), significa que é lixo ou ruído gráfico
+        const contemDesconhecido = tokens.includes(100n);
 
-        const tokensDoBatch = batchAtual.map(t => tokenizeWordPiece(t, vocab));
-        const maiorLinhaNoBatch = Math.max(...tokensDoBatch.map(t => t.length));
-        const dynamicMaxLength = Math.min(maiorLinhaNoBatch + 2, TETO_MAX_LENGTH);
+        // 3. Validação Ortográfica Global (Unicode)
+        // \p{L} aceita QUALQUER letra de QUALQUER alfabeto do planeta (Árabe, Cirílico, Ideogramas, Kanji, etc.)
+        // a flag 'u' no final ativa o suporte completo a caracteres Unicode do JavaScript
+        const ehPalavraValida = /^\p{L}+$/u.test(chaveLimpa);
 
-        const inputIdsData = new BigInt64Array(atualBatchSize * dynamicMaxLength);
-        const attentionMaskData = new BigInt64Array(atualBatchSize * dynamicMaxLength);
-
-        batchAtual.forEach((t, index) => {
-            const tokenIds = tokensDoBatch[index];
-            const offset = index * dynamicMaxLength;
-            inputIdsData[offset] = 101n; // [CLS]
-            let pos = 1;
-            for (const id of tokenIds) {
-                if (pos >= dynamicMaxLength - 1) break;
-                inputIdsData[offset + pos] = id;
-                attentionMaskData[offset + pos] = 1n;
-                pos++;
-            }
-            inputIdsData[offset + pos] = 102n; // [SEP]
-            attentionMaskData[offset] = 1n;
-            attentionMaskData[offset + pos] = 1n;
-        });
-
-        try {
-            const output = await session.run({
-                input_ids: new ort.Tensor('int64', inputIdsData, [atualBatchSize, dynamicMaxLength]),
-                attention_mask: new ort.Tensor('int64', attentionMaskData, [atualBatchSize, dynamicMaxLength])
-            });
-
-            const outputData = output[session.outputNames[0]].data;
-            const numLabels = outputData.length / atualBatchSize;
-
-            batchAtual.forEach((t, index) => {
-                const inicio = index * numLabels;
-                const logits = Array.from(outputData.slice(inicio, inicio + numLabels));
-                const scores = softmax(logits);
-
-                // --- Cálculo de Entropia Semântica ---
-                const maxScore = Math.max(...scores);
-                const minScore = Math.min(...scores);
-                const margemCerteza = maxScore - minScore;
-
-                // Executa a limpeza idêntica
-                const chaveLimpa = limparChave(t);
-                const palavraUpper = chaveLimpa.toUpperCase();
-
-                // Se a IA tiver convicção sobre a palavra (evita títulos/lixo estrutural)
-                if (margemCerteza > 0.20) {
-                    const tokens = tokensDoBatch[index];
-                    const contemDesconhecido = tokens.includes(100n); // Filtra lixo de caracteres / código [UNK]
-
-                    if (!contemDesconhecido && /^[A-ZÁ-Ý]+$/i.test(palavraUpper)) {
-                        // AGORA: Adiciona apenas a String direta no array resultados, atendendo ao Caça-Palavras
-                        resultados.push(palavraUpper);
-                    }
-                } else {
-                    console.log(`🗑️ [IA FILTRO] Removido por incerteza semântica (Título/Lixo): "${t}" (Certeza: ${margemCerteza.toFixed(4)})`);
-                }
-            });
-
-            const progresso = Math.round(((i / BATCH_SIZE) + 1) / totalBatches * 100);
-            self.postMessage({ tipo: 'PROGRESSO', valor: Math.min(progresso, 100) });
-
-        } catch (e) {
-            console.error("Erro no processamento do lote:", e);
+        // Se a palavra existe no dicionário global e é um conjunto puro de letras/ideogramas, ela entra
+        if (!contemDesconhecido && ehPalavraValida) {
+            // Converte para UpperCase apenas se o alfabeto suportar caixa alta (evita bugs em escritas asiáticas)
+            resultados.push(chaveLimpa.toUpperCase());
+        } else {
+            console.log(`🗑️ [FILTRO] Linha descartada por não ser uma palavra válida globalmente: "${linha}"`);
         }
-    }
 
-    console.log("🎯 [IA SUCESSO] Vetor limpo para Caça-Palavras gerado:", resultados);
+        // Atualiza o progresso da barra para cada palavra processada
+        if (totalLinhas > 0) {
+            const progresso = Math.round(((index + 1) / totalLinhas) * 100);
+            self.postMessage({ tipo: 'PROGRESSO', valor: progresso });
+        }
+    });
+
+    // Garante o fechamento da barra de progresso enviando 100% ao final
+    self.postMessage({ tipo: 'PROGRESSO', valor: 100 });
+
+    console.log("🎯 [SUCESSO] Vetor limpo e internacional gerado:", resultados);
     return resultados;
 }
