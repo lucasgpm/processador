@@ -140,8 +140,6 @@ async function processarLinhasComClassificador(linhas, session, vocab) {
                 // O DistilBERT entra em ação para chancelar se o que sobrou é uma palavra com peso léxico real
                 if (margemCerteza > 0.12 && ehLetraPura && !contemDesconhecido) {
                     resultados.push(chaveLimpa.toUpperCase());
-                } else {
-                    console.log(`🗑️ [IA FILTRO] Descartado: "${t}" (Certeza: ${margemCerteza.toFixed(4)})`);
                 }
             });
 
@@ -155,6 +153,5 @@ async function processarLinhasComClassificador(linhas, session, vocab) {
 
     self.postMessage({ tipo: 'PROGRESSO', valor: 100 });
 
-    console.log("🎯 [IA SUCESSO] Lista final ultra-robusta gerada:", resultados);
     return resultados;
 }
