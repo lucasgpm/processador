@@ -60,21 +60,28 @@ async function processarLinhasComClassificador(linhas, session, vocab) {
     const BATCH_SIZE = 4; 
     const TETO_MAX_LENGTH = 128;
 
-    // 1. HIGIENIZAÇÃO AGALÁXICA (Limpeza inicial ultra-tolerante)
-    // Em vez de rejeitar linhas com espaços ou pontuações, nós apenas limpamos o lixo visual da linha.
-    // Isso garante que se o usuário colar "- Alvorada" ou "1. Quimera:", a palavra sobreviva pura.
+    // 1. HIGIENIZAÇÃO E ISOLAMENTO DE PALAVRAS TRIDIMENSIONAL
     const linhasLimpas = linhas
         .map(l => {
-            return l.trim()
+            let texto = l.trim();
+
+            // Se a linha tem uma estrutura de dica/definição (Ex: "1. Prioridade: Defina...", "Foco - Concentrar")
+            // Vamos quebrar no primeiro divisor lógico e pegar apenas a parte da palavra.
+            const divisorMatch = texto.match(/[:|—]|\s-\s/);
+            if (divisorMatch) {
+                texto = texto.substring(0, divisorMatch.index).trim();
+            }
+
+            return texto
                 // Remove marcações de Markdown comuns de IA (como **, _, *, `)
                 .replace(/[\*_`~]/g, '')
-                // Remove numerações, marcadores de lista e pontuações do início ou fim da linha
-                // (Ex: "- Palavra", "1. Palavra:", "• Palavra")
+                // Remove numerações, marcadores de lista e pontuações remanescentes das pontas
                 .replace(/^[\s\d.,•\-\*#•§+–—]+|[\s.,:;!?\-\+–—]+$/g, '')
                 .trim();
         })
-        // Filtro físico mínimo: o que não tiver entre 2 e 16 caracteres não cabe em um tabuleiro
-        .filter(t => t.length >= 2 && t.length <= 16);
+        // Filtro físico: palavras de caça-palavras de qualquer idioma têm entre 2 e 16 caracteres
+        // e, após isoladas, não devem conter espaços internos.
+        .filter(t => t.length >= 2 && t.length <= 16 && !t.includes(" "));
 
     const totalBatches = Math.ceil(linhasLimpas.length / BATCH_SIZE);
 
@@ -106,7 +113,7 @@ async function processarLinhasComClassificador(linhas, session, vocab) {
         });
 
         try {
-            // 2. INFERÊNCIA DA IA (O DistilBERT analisa o lote)
+            // 2. INFERÊNCIA DA IA
             const output = await session.run({
                 input_ids: new ort.Tensor('int64', inputIdsData, [atualBatchSize, dynamicMaxLength]),
                 attention_mask: new ort.Tensor('int64', attentionMaskData, [atualBatchSize, dynamicMaxLength])
@@ -120,31 +127,24 @@ async function processarLinhasComClassificador(linhas, session, vocab) {
                 const logits = Array.from(outputData.slice(inicio, inicio + numLabels));
                 const scores = softmax(logits);
 
-                // --- A MÉTRICA ULTRA-ROBUSTA DE ENTROPIA ---
                 const maxScore = Math.max(...scores);
                 const minScore = Math.min(...scores);
                 const margemCerteza = maxScore - minScore;
 
                 const chaveLimpa = limparChave(t);
                 
-                // Validação Ortográfica Universal (Qualquer letra ou caractere alfabético do mundo)
                 const ehLetraPura = /^\p{L}+$/u.test(chaveLimpa);
                 const tokens = tokensDoBatch[index];
-                const contemDesconhecido = tokens.includes(100n); // Filtra códigos quebrados ou lixo de bytes ([UNK])
+                const contemDesconhecido = tokens.includes(100n);
 
-                // A IA DISTILBERT EM AÇÃO:
-                // Quando o usuário colar frases explicativas ("Aqui está a lista..."), pequenos pedaços de frases
-                // ou conjunções, o modelo distribui os scores uniformemente (Margem de certeza baixíssima, perto de 0).
-                // Quando lê uma palavra com significado léxico forte isolada, a certeza dela dispara (> 0.12).
+                // O DistilBERT entra em ação para chancelar se o que sobrou é uma palavra com peso léxico real
                 if (margemCerteza > 0.12 && ehLetraPura && !contemDesconhecido) {
                     resultados.push(chaveLimpa.toUpperCase());
                 } else {
-                    // Log para você monitorar a IA tomando decisões em tempo real no console
-                    console.log(`🗑️ [IA FILTRO] Descartado automaticamente pela IA: "${t}" (Certeza Semântica: ${margemCerteza.toFixed(4)})`);
+                    console.log(`🗑️ [IA FILTRO] Descartado: "${t}" (Certeza: ${margemCerteza.toFixed(4)})`);
                 }
             });
 
-            // Notifica o progresso da barra na tela
             const progresso = Math.round(((i / BATCH_SIZE) + 1) / totalBatches * 100);
             self.postMessage({ tipo: 'PROGRESSO', valor: Math.min(progresso, 100) });
 
@@ -153,8 +153,8 @@ async function processarLinhasComClassificador(linhas, session, vocab) {
         }
     }
 
-    // Garante fechamento da animação
     self.postMessage({ tipo: 'PROGRESSO', valor: 100 });
-    
+
+    console.log("🎯 [IA SUCESSO] Lista final ultra-robusta gerada:", resultados);
     return resultados;
 }
