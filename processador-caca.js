@@ -60,27 +60,39 @@ async function processarLinhasComClassificador(linhas, session, vocab) {
     const BATCH_SIZE = 4; 
     const TETO_MAX_LENGTH = 128;
 
-    // 1. HIGIENIZAÇÃO E ISOLAMENTO DE PALAVRAS TRIDIMENSIONAL
-    const linhasLimpas = linhas
+    // 1. TRITURADOR UNIVERSAL (Nivelamento de estrutura)
+    // Se o usuário colar palavras separadas por vírgulas na mesma linha, transformamos em linhas separadas.
+    const linhasExpandidas = [];
+    linhas.forEach(linha => {
+        let texto = linha.trim();
+        if (!texto) return;
+
+        // Se a linha tem estrutura de dica (Ex: "1. Prioridade: Defina..."), isola a palavra antes do divisor
+        const divisorMatch = texto.match(/[:|—]|\s-\s/);
+        if (divisorMatch) {
+            texto = texto.substring(0, divisorMatch.index).trim();
+        }
+
+        // Se a linha contiver palavras separadas por vírgulas ou ponto e vírgula, divide em sublinhas
+        if (texto.includes(',') || texto.includes(';')) {
+            const subPalavras = texto.split(/[,;]+/);
+            subPalavras.forEach(sp => linhasExpandidas.push(sp.trim()));
+        } else {
+            linhasExpandidas.push(texto);
+        }
+    });
+
+    // 2. HIGIENIZAÇÃO SENSÍVEL AO CONTEXTO
+    const linhasLimpas = linhasExpandidas
         .map(l => {
-            let texto = l.trim();
-
-            // Se a linha tem uma estrutura de dica/definição (Ex: "1. Prioridade: Defina...", "Foco - Concentrar")
-            // Vamos quebrar no primeiro divisor lógico e pegar apenas a parte da palavra.
-            const divisorMatch = texto.match(/[:|—]|\s-\s/);
-            if (divisorMatch) {
-                texto = texto.substring(0, divisorMatch.index).trim();
-            }
-
-            return texto
+            return l
                 // Remove marcações de Markdown comuns de IA (como **, _, *, `)
                 .replace(/[\*_`~]/g, '')
-                // Remove numerações, marcadores de lista e pontuações remanescentes das pontas
-                .replace(/^[\s\d.,•\-\*#•§+–—]+|[\s.,:;!?\-\+–—]+$/g, '')
+                // Remove numerações, marcadores, parênteses de quantidade (Ex: "(15)") e pontuações das pontas
+                .replace(/^[\s\d.,•\-\*#•§+–—\(]+|[\s.,:;!?\-\+–—\)]+$/g, '')
                 .trim();
         })
-        // Filtro físico: palavras de caça-palavras de qualquer idioma têm entre 2 e 16 caracteres
-        // e, após isoladas, não devem conter espaços internos.
+        // Filtro físico final: O termo isolado não pode ter espaços internos e deve ter tamanho válido de tabuleiro
         .filter(t => t.length >= 2 && t.length <= 16 && !t.includes(" "));
 
     const totalBatches = Math.ceil(linhasLimpas.length / BATCH_SIZE);
@@ -113,7 +125,7 @@ async function processarLinhasComClassificador(linhas, session, vocab) {
         });
 
         try {
-            // 2. INFERÊNCIA DA IA
+            // 3. INFERÊNCIA DA IA
             const output = await session.run({
                 input_ids: new ort.Tensor('int64', inputIdsData, [atualBatchSize, dynamicMaxLength]),
                 attention_mask: new ort.Tensor('int64', attentionMaskData, [atualBatchSize, dynamicMaxLength])
@@ -131,13 +143,14 @@ async function processarLinhasComClassificador(linhas, session, vocab) {
                 const minScore = Math.min(...scores);
                 const margemCerteza = maxScore - minScore;
 
+                // Aqui usamos a sua função original de limpeza de caracteres
                 const chaveLimpa = limparChave(t);
                 
                 const ehLetraPura = /^\p{L}+$/u.test(chaveLimpa);
                 const tokens = tokensDoBatch[index];
                 const contemDesconhecido = tokens.includes(100n);
 
-                // O DistilBERT entra em ação para chancelar se o que sobrou é uma palavra com peso léxico real
+                // A IA valida se o termo purificado tem força semântica real (jogando fora conjunções ou resíduos)
                 if (margemCerteza > 0.12 && ehLetraPura && !contemDesconhecido) {
                     resultados.push(chaveLimpa.toUpperCase());
                 }
@@ -152,6 +165,5 @@ async function processarLinhasComClassificador(linhas, session, vocab) {
     }
 
     self.postMessage({ tipo: 'PROGRESSO', valor: 100 });
-
     return resultados;
 }
